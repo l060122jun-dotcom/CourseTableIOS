@@ -23,6 +23,8 @@ targets:
     platform: iOS
     sources:
       - path: Sources/CourseTableApp
+    resources:
+      - path: Sources/CourseTableApp/PrivacyInfo.xcprivacy
     dependencies:
       - target: CourseTableCore
     info:
