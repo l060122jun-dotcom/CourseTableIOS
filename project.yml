@@ -1,0 +1,56 @@
+name: CourseTable
+options:
+  bundleIdPrefix: com.codex.coursetable
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "5.10"
+    DEVELOPMENT_TEAM: ""
+targets:
+  CourseTableCore:
+    type: framework
+    platform: iOS
+    sources:
+      - path: Sources/CourseTableCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.codex.coursetable.core
+        GENERATE_INFOPLIST_FILE: YES
+  CourseTableApp:
+    type: application
+    platform: iOS
+    sources:
+      - path: Sources/CourseTableApp
+    dependencies:
+      - target: CourseTableCore
+    info:
+      path: Sources/CourseTableApp/Info.plist
+      properties:
+        CFBundleDisplayName: 课程表
+        UILaunchScreen: {}
+        NSCameraUsageDescription: 用于扫描课程表图片并识别课程与时间。
+        NSCalendarsWriteOnlyAccessUsageDescription: 用于把确认后的课程写入系统日历并设置提醒。
+        NSCalendarsFullAccessUsageDescription: 用于更新或删除本应用此前导入的课程日程。
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.codex.coursetable.app
+        CODE_SIGN_STYLE: Automatic
+  CourseTableCoreTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: Tests/CourseTableCoreTests
+    dependencies:
+      - target: CourseTableCore
+schemes:
+  CourseTable:
+    build:
+      targets:
+        CourseTableCore: all
+        CourseTableApp: all
+        CourseTableCoreTests: [test]
+    test:
+      targets:
+        - CourseTableCoreTests
