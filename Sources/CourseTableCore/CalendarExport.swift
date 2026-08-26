@@ -48,4 +48,8 @@ public struct CalendarExportRecord: Identifiable, Codable, Equatable, Sendable {
     public var fingerprint: String
     public var eventIdentifier: String?
     public var lastExportedAt: Date
+
+    public init(id: UUID = UUID(), fingerprint: String, eventIdentifier: String? = nil, lastExportedAt: Date = .now) {
+        self.id = id; self.fingerprint = fingerprint; self.eventIdentifier = eventIdentifier; self.lastExportedAt = lastExportedAt
+    }
 }

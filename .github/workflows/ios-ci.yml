@@ -16,6 +16,11 @@ jobs:
       - name: Select Xcode
         run: sudo xcode-select -s /Applications/Xcode_16.4.app/Contents/Developer
 
+      - name: Print toolchain
+        run: |
+          xcodebuild -version
+          xcodegen --version || true
+
       - name: Install XcodeGen
         run: brew install xcodegen
 
@@ -32,3 +37,23 @@ jobs:
             -scheme CourseTable \
             -destination "generic/platform=iOS Simulator" \
             CODE_SIGNING_ALLOWED=NO
+
+      - name: Test and capture simulator screen
+        run: |
+          DEVICE=$(xcrun simctl list devices available | grep -m1 -E 'iPhone .* \(' | sed -E 's/.*iPhone/ iPhone/' | sed -E 's/ \([A-F0-9-]+\).*//')
+          UDID=$(xcrun simctl list devices available | grep -m1 -E 'iPhone .* \(' | sed -E 's/.*\(([A-F0-9-]+)\).*/\1/')
+          xcrun simctl boot "$UDID" || true
+          xcrun simctl bootstatus "$UDID" -b
+          xcodebuild test -project CourseTable.xcodeproj -scheme CourseTable -destination "platform=iOS Simulator,id=$UDID" CODE_SIGNING_ALLOWED=NO
+          xcodebuild -project CourseTable.xcodeproj -scheme CourseTable -sdk iphonesimulator -configuration Debug -derivedDataPath build CODE_SIGNING_ALLOWED=NO build
+          xcrun simctl install "$UDID" build/Build/Products/Debug-iphonesimulator/课程表.app || xcrun simctl install "$UDID" build/Build/Products/Debug-iphonesimulator/CourseTableApp.app
+          xcrun simctl launch "$UDID" com.codex.coursetable.app
+          sleep 3
+          mkdir -p artifacts
+          xcrun simctl io "$UDID" screenshot artifacts/course-table.png
+
+      - name: Upload effect screenshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: course-table-effect
+          path: artifacts/course-table.png
