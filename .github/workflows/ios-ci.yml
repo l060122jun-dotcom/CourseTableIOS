@@ -28,7 +28,11 @@ jobs:
         run: brew install xcodegen
 
       - name: Generate project
-        run: xcodegen generate
+        run: |
+          xcodegen generate
+          # Current XcodeGen emits objectVersion 77, which Xcode 15.4 rejects.
+          # Keep the generated project otherwise unchanged for the macos-14 runner.
+          sed -i '' 's/objectVersion = 77;/objectVersion = 56;/' CourseTable.xcodeproj/project.pbxproj
 
       - name: Test domain package
         run: swift test
