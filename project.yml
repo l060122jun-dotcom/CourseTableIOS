@@ -33,6 +33,7 @@ targets:
         NSCameraUsageDescription: 用于扫描课程表图片并识别课程与时间。
         NSCalendarsWriteOnlyAccessUsageDescription: 用于把确认后的课程写入系统日历并设置提醒。
         NSCalendarsFullAccessUsageDescription: 用于更新或删除本应用此前导入的课程日程。
+        NSCalendarsUsageDescription: 用于把确认后的课程写入系统日历并设置提醒。
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.codex.coursetable.app
