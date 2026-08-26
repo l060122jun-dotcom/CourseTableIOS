@@ -6,6 +6,10 @@ on:
   pull_request:
   workflow_dispatch:
 
+concurrency:
+  group: ios-ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build-and-test:
     # macos-14 has the broadest availability for private repositories.
