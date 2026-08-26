@@ -1,5 +1,7 @@
 import SwiftUI
 import CourseTableCore
+import PhotosUI
+import UIKit
 
 @main
 struct CourseTableApp: App {
@@ -171,11 +173,33 @@ private struct NewCourseSheet: View {
 }
 
 private struct ImportView: View {
+    @State private var selectedItem: PhotosPickerItem?
+    @State private var isScanning = false
+    @State private var draft: OCRImportDraft?
+    @State private var errorMessage: String?
     var body: some View {
         List {
-            Label("拍照导入课程表", systemImage: "camera")
-            Label("从相册选择图片", systemImage: "photo")
+            PhotosPicker(selection: $selectedItem, matching: .images) { Label("从相册选择图片", systemImage: "photo") }
+                .onChange(of: selectedItem) { _, item in scan(item) }
+            Label("拍照导入课程表", systemImage: "camera").foregroundStyle(.secondary)
+            if isScanning { ProgressView("正在识别课程与时间…") }
+            if let draft {
+                Section("识别草稿（请确认）") {
+                    Text(draft.rawRecognizedText.isEmpty ? "未识别到文字" : draft.rawRecognizedText).font(.footnote)
+                    Text("识别结果不会自动写入日历，确认后再创建课程。").font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            if let errorMessage { Text(errorMessage).foregroundStyle(.red).font(.footnote) }
             Text("OCR 结果会先进入可编辑草稿，确认后才创建课程和日历提醒。").font(.footnote).foregroundStyle(.secondary)
+        }
+    }
+    private func scan(_ item: PhotosPickerItem?) {
+        guard let item else { return }
+        isScanning = true; errorMessage = nil
+        Task {
+            do { let data = try await item.loadTransferable(type: Data.self); guard let data, let image = UIImage(data: data) else { throw OCRServiceError.invalidImage }; draft = try await OCRService().recognize(image: image) }
+            catch { errorMessage = "识别失败：\(error.localizedDescription)" }
+            isScanning = false
         }
     }
 }
