@@ -1,20 +1,20 @@
 const store = require('../../utils/store')
-function pad(value) { return String(value).padStart(2, '0') }
-function dateKey(date) { return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}` }
-function displayDate(date) { return `${date.getMonth() + 1}/${date.getDate()}` }
+function pad(v) { return String(v).padStart(2, '0') }
+function key(d) { return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` }
+function md(d) { return `${d.getMonth() + 1}/${d.getDate()}` }
 Page({
-  data: { table: {}, periods: [], periodRows: [], courses: [], visibleCourses: [], customCourses: [], days: ['一', '二', '三', '四', '五', '六', '日'], dayHeaders: [], weekLabels: [], weekIndex: 0, currentWeek: 1, todayLabel: '' },
+  data: { table: {}, periods: [], periodRows: [], courses: [], visibleCourses: [], customCourses: [], days: ['一', '二', '三', '四', '五', '六', '日'], weekPages: [], weekLabels: [], weekIndex: 0, currentWeek: 1, todayLabel: '' },
   onShow() { this.refresh() },
   refresh() {
-    const document = store.load(); const table = document.table || {}; const currentWeek = Number(table.currentWeek || 1); const totalWeeks = Number(table.totalWeeks || 18)
-    const weekLabels = Array.from({ length: totalWeeks }, (_, index) => `第 ${index + 1} 周`); const periods = document.periods || []; const courses = document.courses || []; const today = new Date()
-    const semesterStart = table.semesterStart ? new Date(`${table.semesterStart}T00:00:00`) : today; const start = new Date(semesterStart); start.setDate(start.getDate() + (currentWeek - 1) * 7)
-    const dayHeaders = this.data.days.map((label, index) => { const date = new Date(start); date.setDate(start.getDate() + index); return { label, date: displayDate(date), current: dateKey(date) === dateKey(today) } })
-    const visibleCourses = courses.filter(course => !Array.isArray(course.weeks) || course.weeks.length === 0 || course.weeks.indexOf(currentWeek) !== -1)
-    this.setData({ table, periods, periodRows: periods, courses, visibleCourses, customCourses: visibleCourses.filter(item => item.timingMode === 'custom'), weekLabels, weekIndex: Math.max(0, currentWeek - 1), currentWeek, dayHeaders, todayLabel: `${today.getFullYear()}年${today.getMonth() + 1}月${today.getDate()}日` })
+    const doc = store.load(); const table = doc.table || {}; const total = Number(table.totalWeeks || 18); const current = Number(table.currentWeek || 1); const periods = doc.periods || []; const courses = doc.courses || []; const today = new Date(); const base = table.semesterStart ? new Date(`${table.semesterStart}T00:00:00`) : today
+    const headers = week => { const start = new Date(base); start.setDate(start.getDate() + (week - 1) * 7); return this.data.days.map((label, i) => { const d = new Date(start); d.setDate(start.getDate() + i); return { label, date: md(d), current: key(d) === key(today) } }) }
+    const pages = Array.from({ length: total }, (_, i) => { const week = i + 1; return { week, headers: headers(week), courses: courses.filter(c => !Array.isArray(c.weeks) || !c.weeks.length || c.weeks.indexOf(week) >= 0) } }); const page = pages[Math.min(total - 1, Math.max(0, current - 1))] || { headers: [], courses: [] }
+    this.setData({ table, periods, periodRows: periods, courses, visibleCourses: page.courses, customCourses: page.courses.filter(c => c.timingMode === 'custom'), weekPages: pages, weekLabels: pages.map(p => `第 ${p.week} 周`), weekIndex: current - 1, currentWeek: current, dayHeaders: page.headers, todayLabel: `${today.getFullYear()}年${today.getMonth() + 1}月${today.getDate()}日` })
   },
-  weekChange(event) { const currentWeek = Number(event.detail.value) + 1; const document = store.load(); document.table.currentWeek = currentWeek; store.save(document); this.refresh() },
+  weekChange(e) { this.setWeek(Number(e.detail.value) + 1) },
+  weekSwipe(e) { this.setWeek(Number(e.detail.current) + 1) },
+  setWeek(week) { if (week === this.data.currentWeek) return; const doc = store.load(); doc.table.currentWeek = week; store.save(doc); this.refresh() },
   newCourse() { wx.navigateTo({ url: '/pages/editor/editor' }) },
-  openDetail(event) { wx.navigateTo({ url: '/pages/editor/editor?id=' + event.currentTarget.dataset.id }) },
+  openDetail(e) { wx.navigateTo({ url: '/pages/editor/editor?id=' + e.currentTarget.dataset.id }) },
   openSettings() { wx.switchTab({ url: '/pages/settings/settings' }) }
 })
