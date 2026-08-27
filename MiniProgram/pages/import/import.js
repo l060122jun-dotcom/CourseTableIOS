@@ -9,6 +9,25 @@ function courseColor(name) {
   return palette[hash % palette.length]
 }
 
+function normalizeCourse(course, index) {
+  const hasCustomTime = course.customStart && course.customEnd && course.startPeriod == null && course.endPeriod == null
+  const timingMode = course.timingMode === 'custom' || hasCustomTime ? 'custom' : 'period'
+  const normalized = {
+    ...course,
+    id: course.id || 'ocr-' + Date.now() + '-' + index,
+    weekday: Number(course.weekday) || 1,
+    startPeriod: timingMode === 'period' ? (Number(course.startPeriod) || 1) : null,
+    endPeriod: timingMode === 'period' ? (Number(course.endPeriod) || Number(course.startPeriod) || 1) : null,
+    timingMode,
+    weeks: Array.isArray(course.weeks) ? course.weeks.map(Number).filter(Number.isFinite) : course.weeks,
+    startWeek: course.startWeek == null ? course.startWeek : Number(course.startWeek),
+    endWeek: course.endWeek == null ? course.endWeek : Number(course.endWeek)
+  }
+  normalized.spanHeight = course.spanHeight || ((normalized.endPeriod || normalized.startPeriod || 1) - (normalized.startPeriod || 1) + 1) * 190 - 8
+  normalized.color = course.color || courseColor(course.name)
+  return normalized
+}
+
 Page({
   data: { message: '', healthMessage: '', draft: null, previewCourses: [], visibleCourses: [], currentWeek: 1, currentWeekIndex: 0, totalWeeks: 18, weekOptions: [], touchStartX: 0, touchStartY: 0, transitionClass: '', periods: [], days: ['一', '二', '三', '四', '五', '六', '日'] },
   onShow() { const document = store.load(); const totalWeeks = document.table.totalWeeks || 18; const currentWeek = Math.min(document.table.currentWeek || 1, totalWeeks); this.setData({ periods: document.periods || [], currentWeek, currentWeekIndex: currentWeek - 1, totalWeeks, weekOptions: Array.from({ length: totalWeeks }, (_, index) => `第 ${index + 1} 周`) }) },
@@ -57,11 +76,7 @@ Page({
         const path = result.tempFiles[0].tempFilePath
         this.setData({ message: '图片已选择，正在识别…', draft: null, healthMessage: '' })
         ocrAdapter.recognize(path).then(draft => {
-          const courses = (draft.courses || []).map((course, index) => ({
-            ...course, color: course.color || courseColor(course.name),
-            spanHeight: course.spanHeight || ((course.endPeriod || course.startPeriod || 1) - (course.startPeriod || 1) + 1) * 190 - 8,
-            id: course.id || 'ocr-' + Date.now() + '-' + index
-          }))
+          const courses = (draft.courses || []).map(normalizeCourse)
           this.setData({ draft, previewCourses: courses, message: '' })
           this.updateVisibleCourses(courses, this.data.currentWeek)
         }).catch(error => this.setData({ message: error.message || '识别失败' }))
@@ -73,7 +88,8 @@ Page({
     if (!this.data.previewCourses.length) { wx.showToast({ title: '暂无可导入的课程', icon: 'none' }); return }
     const document = store.load()
     const oldIds = new Set(document.courses.map(c => c.id))
-    document.courses = document.courses.concat(this.data.previewCourses.filter(c => !oldIds.has(c.id)))
+    const normalizedCourses = this.data.previewCourses.map(normalizeCourse)
+    document.courses = document.courses.concat(normalizedCourses.filter(c => !oldIds.has(c.id)))
     store.save(document)
     wx.showToast({ title: '已导入课表', icon: 'success' })
     setTimeout(() => wx.switchTab({ url: '/pages/index/index' }), 500)
