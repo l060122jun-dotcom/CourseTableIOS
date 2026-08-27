@@ -10,8 +10,19 @@ function courseColor(name) {
 }
 
 Page({
-  data: { message: '', healthMessage: '', draft: null, previewCourses: [], periods: [], days: ['一', '二', '三', '四', '五', '六', '日'] },
-  onShow() { this.setData({ periods: store.load().periods || [] }) },
+  data: { message: '', healthMessage: '', draft: null, previewCourses: [], visibleCourses: [], currentWeek: 1, totalWeeks: 18, periods: [], days: ['一', '二', '三', '四', '五', '六', '日'] },
+  onShow() { const document = store.load(); this.setData({ periods: document.periods || [], currentWeek: document.table.currentWeek || 1, totalWeeks: document.table.totalWeeks || 18 }) },
+  updateVisibleCourses(courses, week) {
+    const visibleCourses = courses.filter(course => {
+      const weeks = Array.isArray(course.weeks) ? course.weeks.filter(Number.isFinite) : []
+      if (weeks.length) return weeks.indexOf(week) >= 0
+      if (Number.isFinite(course.startWeek) || Number.isFinite(course.endWeek)) return week >= (course.startWeek || 1) && week <= (course.endWeek || this.data.totalWeeks)
+      return true
+    })
+    this.setData({ visibleCourses })
+  },
+  previousWeek() { if (this.data.currentWeek > 1) { const week = this.data.currentWeek - 1; this.setData({ currentWeek: week }); this.updateVisibleCourses(this.data.previewCourses, week) } },
+  nextWeek() { if (this.data.currentWeek < this.data.totalWeeks) { const week = this.data.currentWeek + 1; this.setData({ currentWeek: week }); this.updateVisibleCourses(this.data.previewCourses, week) } },
   checkHealth() {
     this.setData({ healthMessage: '正在检查 OCR 服务…' })
     ocrAdapter.health()
@@ -34,6 +45,7 @@ Page({
             id: course.id || 'ocr-' + Date.now() + '-' + index
           }))
           this.setData({ draft, previewCourses: courses, message: '' })
+          this.updateVisibleCourses(courses, this.data.currentWeek)
         }).catch(error => this.setData({ message: error.message || '识别失败' }))
       },
       fail: error => this.setData({ message: '未选择图片：' + error.errMsg })
@@ -48,5 +60,5 @@ Page({
     wx.showToast({ title: '已导入课表', icon: 'success' })
     setTimeout(() => wx.switchTab({ url: '/pages/index/index' }), 500)
   },
-  backToChoose() { this.setData({ draft: null, previewCourses: [], message: '' }) }
+  backToChoose() { this.setData({ draft: null, previewCourses: [], visibleCourses: [], message: '' }) }
 })
