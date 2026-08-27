@@ -4,7 +4,7 @@ function key(d) { return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.ge
 function md(d) { return `${d.getMonth() + 1}/${d.getDate()}` }
 Page({
   data: { table: {}, periods: [], periodRows: [], courses: [], visibleCourses: [], customCourses: [], days: ['一', '二', '三', '四', '五', '六', '日'], weekPages: [], weekLabels: [], weekIndex: 0, currentWeek: 1, todayLabel: '' },
-  onShow() { this.refresh() },
+  onShow() { this.refresh(); setTimeout(() => wx.pageScrollTo({ scrollTop: 0, duration: 0 }), 0) },
   refresh() {
     const doc = store.load(); const table = doc.table || {}; const total = Number(table.totalWeeks || 18); const current = Number(table.currentWeek || 1); const periods = doc.periods || []; const courses = doc.courses || []; const today = new Date(); const base = table.semesterStart ? new Date(`${table.semesterStart}T00:00:00`) : today
     const headers = week => { const start = new Date(base); start.setDate(start.getDate() + (week - 1) * 7); return this.data.days.map((label, i) => { const d = new Date(start); d.setDate(start.getDate() + i); return { label, date: md(d), current: key(d) === key(today) } }) }
