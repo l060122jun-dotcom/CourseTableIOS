@@ -21,7 +21,7 @@
 1. 登录 `mp.weixin.qq.com`，进入目标小程序，打开“开发管理 → 开发设置”，复制 AppID。
 2. 在电脑上复制 `project.config.example.json` 为 `project.config.json`，把 `appid` 替换为真实 AppID；用微信开发者工具重新导入 `MiniProgram/`。
 3. 点击开发者工具顶部“云开发”，创建环境并复制环境 ID。选择与小程序主体一致的地域，创建后不要删除或频繁切换环境。
-4. 在项目根目录创建 `cloudfunctions/courseTableOCR/index.js` 云函数（名称必须和配置一致），实现图片 OCR。云函数输入是 `{ imagePath }`，返回至少包含 `{ draft: { text, warning } }`；若要直接生成课程候选，可返回 `draft.courses` 数组。
+4. 使用仓库中的 `cloudfunctions/courseTableOCR` 云函数（名称必须和配置一致）。云函数输入是 `{ fileID }`，返回 `{ draft, meta }`；`meta.functionVersion` 用于确认实际运行的是不是最新部署。
 5. 复制 `config.example.js` 为 `config.local.js`，填写：
    ```js
    module.exports = {
@@ -29,7 +29,13 @@
      subscribeMessageTemplateIds: ['你的订阅消息模板ID']
    }
    ```
-6. 右键 `cloudfunctions/courseTableOCR`，选择“上传并部署：云端安装依赖”；回到开发者工具编译，打开“导入”页选择图片，确认 OCR 云函数收到 `imagePath`。
+6. 右键 `cloudfunctions/courseTableOCR`，选择“上传并部署：云端安装依赖”。部署后先在开发者工具控制台调用健康检查：
+
+   ```js
+   wx.cloud.callFunction({ name: 'courseTableOCR', data: { action: 'health' } }).then(console.log)
+   ```
+
+   返回的 `health.functionVersion` 应为源码中的版本，且 `health.arkConfigured` 应为 `true`。再打开“导入”页选择图片；客户端会先压缩并限制到 2 MB，云函数日志会依次出现 `download.start`、`download.end`、`image.ready`、`ark.request.start`、`ark.connection.ready`、`ark.response.headers` 和 `complete`。失败日志只包含阶段、耗时、大小和错误码，不包含 API Key。
 7. 进入后台“功能 → 订阅消息”，申请课程提醒模板；将模板 ID 写入 `config.local.js`，再在用户点击提醒功能时请求订阅。模板消息发送必须由云函数/后端完成。
 8. 如果 OCR 使用外部 HTTPS 服务，进入“开发管理 → 开发设置 → 服务器域名”，把 HTTPS 域名加入 `request` 合法域名；不要在小程序前端放 API Secret。
 9. 发布前在开发者工具关闭“本地设置 → 不校验合法域名”，重新测试真机；然后上传体验版，配置体验成员，最后提交审核。

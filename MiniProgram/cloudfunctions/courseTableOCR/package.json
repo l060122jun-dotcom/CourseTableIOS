@@ -1,8 +1,11 @@
 {
   "name": "course-table-ocr",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "main": "index.js",
+  "scripts": {
+    "test": "node test.js"
+  },
   "dependencies": {
-    "wx-server-sdk": "latest"
+    "wx-server-sdk": "4.0.2"
   }
 }

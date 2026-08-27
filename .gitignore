@@ -4,5 +4,6 @@ build/
 *.xcuserstate
 xcuserdata/
 CourseTable.xcodeproj/
+node_modules/
 MiniProgram/config.local.js
 MiniProgram/project.config.json
