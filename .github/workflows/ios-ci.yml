@@ -91,14 +91,21 @@ jobs:
           APP=build/Build/Products/Debug-iphonesimulator/CourseTableApp.app
           test -n "$APP"
           python3 -c 'import subprocess,sys; subprocess.run(sys.argv[1:], timeout=90, check=True)' xcrun simctl install "$UDID" "$APP"
-          python3 -c 'import subprocess,sys; subprocess.run(sys.argv[1:], timeout=60, check=True)' xcrun simctl launch "$UDID" com.codex.coursetable.app --demo-data
-          sleep 3
-          mkdir -p artifacts
-          python3 -c 'import subprocess,sys; subprocess.run(sys.argv[1:], timeout=60, check=True)' xcrun simctl io "$UDID" screenshot artifacts/course-table.png
+          mkdir -p artifacts/screens
+          for SCREEN in home import new-course detail settings; do
+            if [ "$SCREEN" = "home" ]; then
+              python3 -c 'import subprocess,sys; subprocess.run(sys.argv[1:], timeout=60, check=True)' xcrun simctl launch "$UDID" com.codex.coursetable.app --demo-data
+            else
+              python3 -c 'import subprocess,sys; subprocess.run(sys.argv[1:], timeout=60, check=True)' xcrun simctl launch "$UDID" com.codex.coursetable.app --demo-data "--screen=$SCREEN"
+            fi
+            sleep 3
+            python3 -c 'import subprocess,sys; subprocess.run(sys.argv[1:], timeout=60, check=True)' xcrun simctl io "$UDID" screenshot "artifacts/screens/$SCREEN.png"
+          done
+          cp artifacts/screens/home.png artifacts/course-table.png
 
       - name: Upload effect screenshot
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: course-table-effect
-          path: artifacts/course-table.png
+          name: course-table-screens
+          path: artifacts/screens
