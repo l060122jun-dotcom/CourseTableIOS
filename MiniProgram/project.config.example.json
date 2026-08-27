@@ -1,0 +1,22 @@
+{
+  "description": "课程表微信小程序",
+  "packOptions": { "ignore": [] },
+  "setting": {
+    "compileType": "miniprogram",
+    "minified": true,
+    "urlCheck": true,
+    "es6": true,
+    "enhance": true,
+    "postcss": true,
+    "minifyWXSS": true,
+    "minifyWXML": true,
+    "useCompilerPlugins": [],
+    "condition": false
+  },
+  "compileType": "miniprogram",
+  "appid": "请在微信开发者工具中填写真实 AppID",
+  "projectname": "CourseTableMiniProgram",
+  "libVersion": "3.8.0",
+  "simulatorType": "wechat",
+  "simulatorPluginLibVersion": {}
+}
