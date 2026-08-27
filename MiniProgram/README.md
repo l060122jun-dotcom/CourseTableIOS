@@ -36,6 +36,14 @@
    ```
 
    返回的 `health.functionVersion` 应为源码中的版本，且 `health.arkConfigured` 应为 `true`。再打开“导入”页选择图片；客户端会先压缩并限制到 2 MB，云函数日志会依次出现 `download.start`、`download.end`、`image.ready`、`ark.request.start`、`ark.connection.ready`、`ark.response.headers` 和 `complete`。失败日志只包含阶段、耗时、大小和错误码，不包含 API Key。
+
+   当前源码版本为 `2026.08.27-timeout-v2`。如果健康检查仍返回旧版本，说明云函数没有重新部署，需再次右键该目录执行“上传并部署：云端安装依赖”。如果导入仍失败，按最后一个日志阶段判断：
+
+   - `DOWNLOAD_TIMEOUT`：云存储下载或 fileID 权限问题；
+   - `ARK_CONNECT_TIMEOUT`：云函数到火山方舟的 DNS/TLS/出网问题；
+   - `ARK_RESPONSE_TIMEOUT` 或 `ARK_TOTAL_TIMEOUT`：接入点响应过慢，先用更小的图片测试，并确认该 `ep-` 接入点支持视觉图片输入；
+   - `ARK_HTTP_ERROR`：请求已到达方舟，查看 `statusCode` 和 `arkLogId`，通常是接入点、请求格式或图片类型问题；
+   - `complete` 但 `courseCount: 0`：模型已返回但没有结构化课程，检查原图清晰度和识别结果确认页。
 7. 进入后台“功能 → 订阅消息”，申请课程提醒模板；将模板 ID 写入 `config.local.js`，再在用户点击提醒功能时请求订阅。模板消息发送必须由云函数/后端完成。
 8. 如果 OCR 使用外部 HTTPS 服务，进入“开发管理 → 开发设置 → 服务器域名”，把 HTTPS 域名加入 `request` 合法域名；不要在小程序前端放 API Secret。
 9. 发布前在开发者工具关闭“本地设置 → 不校验合法域名”，重新测试真机；然后上传体验版，配置体验成员，最后提交审核。
