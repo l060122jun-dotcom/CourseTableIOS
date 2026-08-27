@@ -52,15 +52,20 @@ jobs:
 
       - name: Launch simulator and capture effect screen
         run: |
-          DEVICE=$(xcrun simctl list devices available | grep -m1 -E 'iPhone .* \(' | sed -E 's/.*iPhone/ iPhone/' | sed -E 's/ \([A-F0-9-]+\).*//')
+          set -euxo pipefail
+          xcrun simctl list devices available
           UDID=$(xcrun simctl list devices available | grep -m1 -E 'iPhone .* \(' | sed -E 's/.*\(([A-F0-9-]+)\).*/\1/')
-          xcrun simctl boot "$UDID" || true
+          test -n "$UDID"
+          echo "Using simulator: $UDID"
+          python3 -c 'import subprocess,sys; subprocess.run(sys.argv[1:], timeout=90, check=True)' xcrun simctl boot "$UDID" || true
           sleep 12
-          xcrun simctl install "$UDID" build/Build/Products/Debug-iphonesimulator/CourseTableApp.app
-          xcrun simctl launch "$UDID" com.codex.coursetable.app
+          APP=$(find build -name 'CourseTableApp.app' -type d | head -1)
+          test -n "$APP"
+          python3 -c 'import subprocess,sys; subprocess.run(sys.argv[1:], timeout=90, check=True)' xcrun simctl install "$UDID" "$APP"
+          python3 -c 'import subprocess,sys; subprocess.run(sys.argv[1:], timeout=60, check=True)' xcrun simctl launch "$UDID" com.codex.coursetable.app
           sleep 3
           mkdir -p artifacts
-          xcrun simctl io "$UDID" screenshot artifacts/course-table.png
+          python3 -c 'import subprocess,sys; subprocess.run(sys.argv[1:], timeout=60, check=True)' xcrun simctl io "$UDID" screenshot artifacts/course-table.png
 
       - name: Upload effect screenshot
         uses: actions/upload-artifact@v4
