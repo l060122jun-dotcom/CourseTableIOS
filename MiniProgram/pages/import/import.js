@@ -10,7 +10,7 @@ function courseColor(name) {
 }
 
 Page({
-  data: { message: '', healthMessage: '', draft: null, previewCourses: [], visibleCourses: [], currentWeek: 1, totalWeeks: 18, periods: [], days: ['一', '二', '三', '四', '五', '六', '日'] },
+  data: { message: '', healthMessage: '', draft: null, previewCourses: [], visibleCourses: [], currentWeek: 1, totalWeeks: 18, touchStartX: 0, touchStartY: 0, periods: [], days: ['一', '二', '三', '四', '五', '六', '日'] },
   onShow() { const document = store.load(); this.setData({ periods: document.periods || [], currentWeek: document.table.currentWeek || 1, totalWeeks: document.table.totalWeeks || 18 }) },
   updateVisibleCourses(courses, week) {
     const visibleCourses = courses.filter(course => {
@@ -23,6 +23,19 @@ Page({
   },
   previousWeek() { if (this.data.currentWeek > 1) { const week = this.data.currentWeek - 1; this.setData({ currentWeek: week }); this.updateVisibleCourses(this.data.previewCourses, week) } },
   nextWeek() { if (this.data.currentWeek < this.data.totalWeeks) { const week = this.data.currentWeek + 1; this.setData({ currentWeek: week }); this.updateVisibleCourses(this.data.previewCourses, week) } },
+  weekTouchStart(event) {
+    const touch = event.touches && event.touches[0]
+    if (touch) this.setData({ touchStartX: touch.pageX, touchStartY: touch.pageY })
+  },
+  weekTouchEnd(event) {
+    const touch = event.changedTouches && event.changedTouches[0]
+    if (!touch) return
+    const dx = touch.pageX - this.data.touchStartX
+    const dy = touch.pageY - this.data.touchStartY
+    if (Math.abs(dx) < 50 || Math.abs(dx) <= Math.abs(dy)) return
+    if (dx < 0) this.nextWeek()
+    else this.previousWeek()
+  },
   checkHealth() {
     this.setData({ healthMessage: '正在检查 OCR 服务…' })
     ocrAdapter.health()
