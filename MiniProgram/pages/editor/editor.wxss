@@ -1,2 +1,3 @@
 .form-row { min-height: 88rpx; }.form-row text:last-child, .form-row picker { flex: 1; text-align: right; }.mode-row { display: flex; gap: 16rpx; padding: 22rpx 0; }.mode-row button { flex: 1; font-size: 25rpx; color: #667085; background: #f2f4f7; }.mode-row button.active { color: #1677ff; background: #eaf3ff; }.save { margin-top: 30rpx; }
 .week-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12rpx 8rpx;padding:12rpx 0 18rpx}.week-item{display:flex;align-items:center;color:#1f2937;font-size:28rpx}.week-item checkbox{transform:scale(.8);margin-right:4rpx}
+.export{margin-top:28rpx}.calendar-tip{padding:0 28rpx;text-align:center}.save{margin-top:18rpx}

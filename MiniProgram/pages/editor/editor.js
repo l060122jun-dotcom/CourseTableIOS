@@ -1,4 +1,5 @@
 const store = require('../../utils/store')
+const ics = require('../../utils/ics')
 
 function makeWeekOptions(totalWeeks, selectedWeeks) {
   const selected = new Set(selectedWeeks)
@@ -48,6 +49,20 @@ Page({
     this.setData({ selectedWeeks, weekOptions })
   },
   timeChange(event) { this.setData({ [event.currentTarget.dataset.key]: event.detail.value }) },
+  async exportCalendar() {
+    const document = store.load()
+    const course = (document.courses || []).find(item => item.id === this.data.id)
+    if (!course) { wx.showToast({ title: '请先保存课程', icon: 'none' }); return }
+    wx.showLoading({ title: '正在生成日历' })
+    try {
+      const content = ics.generateCalendar([course], document.table || {}, document.periods || [])
+      await ics.writeAndOpenCalendar(content, course.name || '课程')
+    } catch (error) {
+      wx.showModal({ title: '无法打开日历文件', content: error.message || '日历导出失败', showCancel: false })
+    } finally {
+      wx.hideLoading()
+    }
+  },
   save() {
     if (!this.data.name.trim()) { wx.showToast({ title: '请填写课程名称', icon: 'none' }); return }
     if (!this.data.selectedWeeks.length) { wx.showToast({ title: '至少选择一周', icon: 'none' }); return }

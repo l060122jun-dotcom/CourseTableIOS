@@ -1,5 +1,6 @@
 const store = require('../../utils/store')
 const reminder = require('../../utils/reminder-adapter')
+const ics = require('../../utils/ics')
 const presetPeriods = [['08:00', '08:45'], ['08:50', '09:35'], ['10:00', '10:45'], ['10:50', '11:35'], ['13:30', '14:15'], ['14:20', '15:05'], ['15:30', '16:15'], ['16:20', '17:05'], ['18:30', '19:15'], ['19:20', '20:05']]
 Page({
   data: { document: {}, tableName: '', totalWeeks: 18, semesterStart: '', reminderMessage: '', countOptions: [], periodCountIndex: 0, periods: [] },
@@ -18,6 +19,18 @@ Page({
   periodTimeChange(event) { const periods = this.data.periods.slice(); const index = Number(event.currentTarget.dataset.index); periods[index][event.currentTarget.dataset.key] = event.detail.value; this.setData({ periods }) },
   restorePreset() { this.setData({ periods: presetPeriods.map((time, index) => ({ index: index + 1, start: time[0], end: time[1] })), periodCountIndex: 9 }) },
   savePeriods() { const document = store.load(); document.periods = this.data.periods.map((period, index) => ({ index: index + 1, start: period.start, end: period.end })); store.save(document); this.setData({ document, periods: document.periods }); wx.showToast({ title: '时间设置已保存', icon: 'success' }) },
+  async exportCalendar() {
+    const document = store.load()
+    wx.showLoading({ title: '正在生成日历' })
+    try {
+      const content = ics.generateCalendar(document.courses || [], document.table || {}, document.periods || [])
+      await ics.writeAndOpenCalendar(content, (document.table && document.table.name) || '整学期课程表')
+    } catch (error) {
+      wx.showModal({ title: '无法打开日历文件', content: error.message || '日历导出失败', showCancel: false })
+    } finally {
+      wx.hideLoading()
+    }
+  },
   subscribe() {
     this.setData({ reminderMessage: '正在请求订阅权限…' })
     reminder.requestSubscription()

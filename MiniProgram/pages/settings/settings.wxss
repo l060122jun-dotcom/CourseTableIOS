@@ -1,1 +1,2 @@
 .row { display:flex; justify-content:space-between; padding:20rpx 0; border-bottom:1rpx solid #eef1f5; color:#596579 }.row text { color:#172033 }.period-row{display:flex;align-items:center;justify-content:space-between;padding:18rpx 0;border-bottom:1rpx solid #eef1f5;color:#596579}.period-number{width:150rpx}.period-row picker{padding:10rpx 18rpx;border-radius:10rpx;background:#f3f5f8;color:#172033}.save-periods{margin-top:24rpx;margin-bottom:18rpx}
+.export-calendar{margin-bottom:18rpx}
