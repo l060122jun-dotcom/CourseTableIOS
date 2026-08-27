@@ -493,17 +493,21 @@ function parseDraft(content) {
 exports.main = async (event, context) => {
   const startedAt = Date.now()
   const id = requestId(context)
+  const settings = providerSettings()
   const meta = () => ({ functionVersion: FUNCTION_VERSION, requestId: id, elapsedMs: Date.now() - startedAt })
 
   if (event && event.action === 'health') {
     const health = {
       ok: true,
       functionVersion: FUNCTION_VERSION,
+      provider: settings.provider,
+      providerConfigured: settings.configured,
+      model: settings.model,
       arkConfigured: Boolean(process.env.ARK_API_KEY && process.env.ARK_ENDPOINT_ID),
-      arkHostname: ARK_HOSTNAME,
-      arkPath: ARK_PATH,
+      arkHostname: settings.hostname,
+      arkPath: settings.path,
       endpointConfigured: Boolean(process.env.ARK_ENDPOINT_ID),
-      endpointCapabilityHint: 'ARK_ENDPOINT_ID 必须绑定支持图片输入的视觉/多模态模型',
+      endpointCapabilityHint: settings.provider === 'deepseek' ? 'DeepSeek 视觉模型能力取决于账号与模型可用性' : 'ARK_ENDPOINT_ID 必须绑定支持图片输入的视觉/多模态模型',
       thinkingField: configuredThinkingField(),
       maxOutputTokens: MAX_OUTPUT_TOKENS,
       maxImageBytes: MAX_IMAGE_BYTES,
@@ -519,8 +523,8 @@ exports.main = async (event, context) => {
 
   try {
     if (!event || !event.fileID) throw serviceError('没有收到图片 fileID', 'MISSING_FILE_ID')
-    if (!process.env.ARK_API_KEY || !process.env.ARK_ENDPOINT_ID) {
-      throw serviceError('未配置 ARK_API_KEY 或 ARK_ENDPOINT_ID', 'ARK_NOT_CONFIGURED')
+    if (!settings.configured) {
+      throw serviceError(settings.provider === 'deepseek' ? '未配置 DEEPSEEK_API_KEY' : '未配置 ARK_API_KEY 或 ARK_ENDPOINT_ID', settings.provider === 'deepseek' ? 'DEEPSEEK_NOT_CONFIGURED' : 'ARK_NOT_CONFIGURED')
     }
 
     log('download.start', { requestId: id })
@@ -543,9 +547,8 @@ exports.main = async (event, context) => {
     }
     log('image.ready', { requestId: id, elapsedMs: Date.now() - startedAt, imageBytes: image.length, base64Chars: imageBase64.length, mime })
 
-    const response = await arkRequest(
-      process.env.ARK_API_KEY,
-      process.env.ARK_ENDPOINT_ID,
+    const response = await providerRequest(
+      settings,
       `data:${mime};base64,${imageBase64}`,
       { requestId: id, imageBytes: image.length, base64Chars: imageBase64.length },
       startedAt + SYNC_BUDGET_MS
