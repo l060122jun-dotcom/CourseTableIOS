@@ -47,6 +47,7 @@ jobs:
             -project CourseTable.xcodeproj \
             -scheme CourseTable \
             -destination "generic/platform=iOS Simulator" \
+            -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO
 
       - name: Launch simulator and capture effect screen
@@ -54,9 +55,8 @@ jobs:
           DEVICE=$(xcrun simctl list devices available | grep -m1 -E 'iPhone .* \(' | sed -E 's/.*iPhone/ iPhone/' | sed -E 's/ \([A-F0-9-]+\).*//')
           UDID=$(xcrun simctl list devices available | grep -m1 -E 'iPhone .* \(' | sed -E 's/.*\(([A-F0-9-]+)\).*/\1/')
           xcrun simctl boot "$UDID" || true
-          xcrun simctl bootstatus "$UDID" -b
-          xcodebuild -project CourseTable.xcodeproj -scheme CourseTable -sdk iphonesimulator -configuration Debug -derivedDataPath build CODE_SIGNING_ALLOWED=NO build
-          xcrun simctl install "$UDID" build/Build/Products/Debug-iphonesimulator/课程表.app || xcrun simctl install "$UDID" build/Build/Products/Debug-iphonesimulator/CourseTableApp.app
+          sleep 12
+          xcrun simctl install "$UDID" build/Build/Products/Debug-iphonesimulator/CourseTableApp.app
           xcrun simctl launch "$UDID" com.codex.coursetable.app
           sleep 3
           mkdir -p artifacts
