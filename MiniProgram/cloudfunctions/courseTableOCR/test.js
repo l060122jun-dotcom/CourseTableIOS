@@ -2,6 +2,8 @@ const assert = require('node:assert/strict')
 const { _test } = require('./index')
 
 assert.equal(_test.constants.ARK_TIMEOUT_MS, 20000)
+assert.equal(_test.constants.DOWNLOAD_TIMEOUT_MS, 5000)
+assert.equal(_test.constants.TOTAL_TIMEOUT_MS, 21000)
 assert.equal(_test.constants.MAX_IMAGE_BYTES, 2 * 1024 * 1024)
 assert.equal(_test.detectImageMime(Buffer.from([0xff, 0xd8, 0xff, 0x00])), 'image/jpeg')
 assert.equal(

@@ -3,12 +3,13 @@ const https = require('https')
 
 cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV })
 
-const FUNCTION_VERSION = '2026.08.27-timeout-v1'
+const FUNCTION_VERSION = '2026.08.27-timeout-v2'
 const ARK_HOSTNAME = 'ark.cn-beijing.volces.com'
 const ARK_PATH = '/api/v3/chat/completions'
 const CONNECT_TIMEOUT_MS = 5000
+const DOWNLOAD_TIMEOUT_MS = 5000
 const ARK_TIMEOUT_MS = 20000
-const TOTAL_TIMEOUT_MS = 24000
+const TOTAL_TIMEOUT_MS = 21000
 const MAX_IMAGE_BYTES = 2 * 1024 * 1024
 const MAX_BASE64_CHARS = 3 * 1024 * 1024
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024
@@ -30,6 +31,16 @@ function serviceError(message, code, details) {
   error.code = code
   error.details = details || {}
   return error
+}
+
+function withTimeout(promise, timeoutMs, error) {
+  let timer
+  return Promise.race([
+    promise,
+    new Promise((resolve, reject) => {
+      timer = setTimeout(() => reject(error), timeoutMs)
+    })
+  ]).finally(() => clearTimeout(timer))
 }
 
 function detectImageMime(buffer) {
@@ -87,7 +98,7 @@ function arkRequest(apiKey, endpointId, imageDataURL, diagnostics) {
       abort(serviceError('连接火山方舟超时，请稍后重试', 'ARK_CONNECT_TIMEOUT', { timeoutMs: CONNECT_TIMEOUT_MS }))
     }, CONNECT_TIMEOUT_MS)
     const totalTimer = setTimeout(() => {
-      abort(serviceError('火山方舟识别超过 24 秒，已提前终止以避免云函数 30 秒超时', 'ARK_TOTAL_TIMEOUT', { timeoutMs: TOTAL_TIMEOUT_MS }))
+      abort(serviceError('火山方舟识别超过 21 秒，已提前终止以避免云函数 30 秒超时', 'ARK_TOTAL_TIMEOUT', { timeoutMs: TOTAL_TIMEOUT_MS }))
     }, TOTAL_TIMEOUT_MS)
 
     log('ark.request.start', Object.assign({}, diagnostics, {
@@ -206,6 +217,7 @@ exports.main = async (event, context) => {
       arkHostname: ARK_HOSTNAME,
       arkPath: ARK_PATH,
       maxImageBytes: MAX_IMAGE_BYTES,
+      downloadTimeoutMs: DOWNLOAD_TIMEOUT_MS,
       arkTimeoutMs: ARK_TIMEOUT_MS
     }
     log('health', Object.assign({ requestId: id }, health))
@@ -219,7 +231,11 @@ exports.main = async (event, context) => {
     }
 
     log('download.start', { requestId: id })
-    const file = await cloud.downloadFile({ fileID: event.fileID })
+    const file = await withTimeout(
+      cloud.downloadFile({ fileID: event.fileID }),
+      DOWNLOAD_TIMEOUT_MS,
+      serviceError('从云存储下载图片超过 5 秒，请检查 fileID 或云环境', 'DOWNLOAD_TIMEOUT', { timeoutMs: DOWNLOAD_TIMEOUT_MS })
+    )
     const image = file.fileContent
     log('download.end', { requestId: id, elapsedMs: Date.now() - startedAt, imageBytes: image.length })
     if (!Buffer.isBuffer(image) || image.length === 0) throw serviceError('下载到的图片为空', 'EMPTY_IMAGE')
@@ -266,5 +282,5 @@ exports._test = {
   detectImageMime,
   parseDraft,
   contentText,
-  constants: { FUNCTION_VERSION, ARK_TIMEOUT_MS, MAX_IMAGE_BYTES, MAX_BASE64_CHARS }
+  constants: { FUNCTION_VERSION, DOWNLOAD_TIMEOUT_MS, ARK_TIMEOUT_MS, TOTAL_TIMEOUT_MS, MAX_IMAGE_BYTES, MAX_BASE64_CHARS }
 }
