@@ -2,13 +2,17 @@ const store = require('../../utils/store')
 const reminder = require('../../utils/reminder-adapter')
 const ics = require('../../utils/ics')
 const presetPeriods = [['08:00', '08:45'], ['08:50', '09:35'], ['10:00', '10:45'], ['10:50', '11:35'], ['13:30', '14:15'], ['14:20', '15:05'], ['15:30', '16:15'], ['16:20', '17:05'], ['18:30', '19:15'], ['19:20', '20:05']]
+const reminderOptions = [0, 5, 10, 15, 30, 60, 120]
+const reminderTypeLabels = ['通知', '闹钟']
 Page({
-  data: { document: {}, tableName: '', totalWeeks: 18, semesterStart: '', reminderMessage: '', countOptions: [], periodCountIndex: 0, periods: [] },
-  onShow() { const document = store.load(); const periods = document.periods || []; const table = document.table || {}; this.setData({ document, tableName: table.name || '', totalWeeks: Number(table.totalWeeks || 18), semesterStart: table.semesterStart || new Date().toISOString().slice(0, 10), periods, countOptions: Array.from({ length: 14 }, (_, i) => String(i + 1)), periodCountIndex: Math.max(0, periods.length - 1) }) },
+  data: { document: {}, tableName: '', totalWeeks: 18, semesterStart: '', calendarReminderMinutes: 30, calendarReminderType: 'notification', reminderOptions, reminderIndex: 4, reminderTypeLabels, reminderTypeIndex: 0, reminderMessage: '', countOptions: [], periodCountIndex: 0, periods: [] },
+  onShow() { const document = store.load(); const periods = document.periods || []; const table = document.table || {}; const calendarReminderMinutes = reminderOptions.includes(Number(table.calendarReminderMinutes)) ? Number(table.calendarReminderMinutes) : 30; const calendarReminderType = table.calendarReminderType === 'alarm' ? 'alarm' : 'notification'; this.setData({ document, tableName: table.name || '', totalWeeks: Number(table.totalWeeks || 18), semesterStart: table.semesterStart || new Date().toISOString().slice(0, 10), calendarReminderMinutes, calendarReminderType, reminderIndex: reminderOptions.indexOf(calendarReminderMinutes), reminderTypeIndex: calendarReminderType === 'alarm' ? 1 : 0, periods, countOptions: Array.from({ length: 14 }, (_, i) => String(i + 1)), periodCountIndex: Math.max(0, periods.length - 1) }) },
   tableField(event) { this.setData({ [event.currentTarget.dataset.key]: event.detail.value }) },
   semesterStartChange(event) { this.setData({ semesterStart: event.detail.value }) },
+  reminderChange(event) { const reminderIndex = Number(event.detail.value); this.setData({ reminderIndex, calendarReminderMinutes: reminderOptions[reminderIndex] }) },
+  reminderTypeChange(event) { const reminderTypeIndex = Number(event.detail.value); this.setData({ reminderTypeIndex, calendarReminderType: reminderTypeIndex === 1 ? 'alarm' : 'notification' }) },
   saveTable() {
-    const document = store.load(); const totalWeeks = Math.min(52, Math.max(1, Number(this.data.totalWeeks) || 18)); const table = { ...(document.table || {}), name: this.data.tableName.trim() || '我的课程表', totalWeeks, semesterStart: this.data.semesterStart || new Date().toISOString().slice(0, 10), currentWeek: Math.min(Number((document.table || {}).currentWeek || 1), totalWeeks) }
+    const document = store.load(); const totalWeeks = Math.min(52, Math.max(1, Number(this.data.totalWeeks) || 18)); const table = { ...(document.table || {}), name: this.data.tableName.trim() || '我的课程表', totalWeeks, semesterStart: this.data.semesterStart || new Date().toISOString().slice(0, 10), calendarReminderMinutes: Number(this.data.calendarReminderMinutes), calendarReminderType: this.data.calendarReminderType === 'alarm' ? 'alarm' : 'notification', currentWeek: Math.min(Number((document.table || {}).currentWeek || 1), totalWeeks) }
     document.table = table; store.save(document); this.setData({ document, tableName: table.name, totalWeeks, semesterStart: table.semesterStart }); wx.showToast({ title: '课程表设置已保存', icon: 'success' })
   },
   periodCountChange(event) {
@@ -23,7 +27,7 @@ Page({
     const document = store.load()
     wx.showLoading({ title: '正在生成日历' })
     try {
-      const content = ics.generateCalendar(document.courses || [], document.table || {}, document.periods || [])
+      const content = ics.generateCalendar(document.courses || [], document.table || {}, document.periods || [], { reminderMinutesOverride: document.table && document.table.calendarReminderMinutes, reminderTypeOverride: document.table && document.table.calendarReminderType })
       await ics.writeAndOpenCalendar(content, (document.table && document.table.name) || '整学期课程表')
     } catch (error) {
       wx.showModal({ title: '无法打开日历文件', content: error.message || '日历导出失败', showCancel: false })

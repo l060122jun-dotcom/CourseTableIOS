@@ -100,7 +100,7 @@ function safeUidPart(value) {
   return normalized.slice(0, 80) || 'course'
 }
 
-function eventLines(course, week, base, periods, stamp) {
+function eventLines(course, week, base, periods, stamp, reminderOverride, reminderTypeOverride) {
   const weekday = Number(course.weekday)
   if (!Number.isInteger(weekday) || weekday < 1 || weekday > 7) throw new Error(`${course.name || '课程'}的星期设置不正确`)
   const times = courseTimes(course, periods)
@@ -120,9 +120,14 @@ function eventLines(course, week, base, periods, stamp) {
   ]
   if (description) lines.push(`DESCRIPTION:${escapeText(description)}`)
   lines.push(`CATEGORIES:${escapeText('课程')}`)
-  const reminder = Math.max(0, Math.min(10080, Number(course.reminderMinutes)))
+  const reminderValue = reminderOverride === undefined || reminderOverride === null ? course.reminderMinutes : reminderOverride
+  const reminder = Math.max(0, Math.min(10080, Number(reminderValue)))
   if (Number.isFinite(reminder)) {
-    lines.push('BEGIN:VALARM', `TRIGGER:-PT${Math.round(reminder)}M`, 'ACTION:DISPLAY', `DESCRIPTION:${escapeText(course.name || '课程提醒')}`, 'END:VALARM')
+    const reminderType = reminderTypeOverride || course.reminderType || 'notification'
+    const action = reminderType === 'alarm' ? 'AUDIO' : 'DISPLAY'
+    lines.push('BEGIN:VALARM', `TRIGGER:-PT${Math.round(reminder)}M`, `ACTION:${action}`)
+    if (action === 'DISPLAY') lines.push(`DESCRIPTION:${escapeText(course.name || '课程提醒')}`)
+    lines.push('END:VALARM')
   }
   lines.push('END:VEVENT')
   return lines
@@ -134,7 +139,7 @@ function generateCalendar(courses, table, periods, options) {
   const stamp = formatUtc(options && options.now ? new Date(options.now) : new Date())
   const events = []
   ;(Array.isArray(courses) ? courses : []).forEach(course => {
-    resolvedWeeks(course, totalWeeks).forEach(week => events.push(...eventLines(course, week, base, periods || [], stamp)))
+    resolvedWeeks(course, totalWeeks).forEach(week => events.push(...eventLines(course, week, base, periods || [], stamp, options && options.reminderMinutesOverride, options && options.reminderTypeOverride)))
   })
   if (!events.length) throw new Error('没有可导出的课程')
   const lines = [
