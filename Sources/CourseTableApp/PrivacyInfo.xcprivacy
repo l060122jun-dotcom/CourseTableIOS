@@ -4,5 +4,4 @@
     <key>NSPrivacyTracking</key><false/>
     <key>NSPrivacyCollectedDataTypes</key><array/>
     <key>NSPrivacyAccessedAPITypes</key><array/>
-    </array>
 </dict></plist>
