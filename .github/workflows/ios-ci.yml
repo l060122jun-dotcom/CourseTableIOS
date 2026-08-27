@@ -57,6 +57,13 @@ jobs:
           path: build/Build/Products/Debug-iphonesimulator/CourseTableApp.app
           if-no-files-found: error
 
+      - name: Validate app privacy manifest and icon
+        run: |
+          APP=build/Build/Products/Debug-iphonesimulator/CourseTableApp.app
+          test -f "$APP/PrivacyInfo.xcprivacy"
+          plutil -lint "$APP/PrivacyInfo.xcprivacy"
+          test -d "$APP/Assets.car"
+
       - name: Create unsigned App Store archive
         run: |
           xcodebuild archive \
