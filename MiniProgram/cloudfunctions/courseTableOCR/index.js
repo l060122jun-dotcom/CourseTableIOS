@@ -3,7 +3,7 @@ const https = require('https')
 
 cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV })
 
-const FUNCTION_VERSION = '2026.08.27-output-8192-v7'
+const FUNCTION_VERSION = '2026.08.27-compact-4096-v8'
 const ARK_HOSTNAME = 'ark.cn-beijing.volces.com'
 const ARK_PATH = '/api/v3/chat/completions'
 const CONNECT_TIMEOUT_MS = 5000
@@ -14,7 +14,7 @@ const SYNC_BUDGET_MS = DOWNLOAD_TIMEOUT_MS + TOTAL_TIMEOUT_MS
 const MAX_IMAGE_BYTES = 2 * 1024 * 1024
 const MAX_BASE64_CHARS = 3 * 1024 * 1024
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024
-const MAX_OUTPUT_TOKENS = 8192
+const MAX_OUTPUT_TOKENS = 4096
 const THINKING_FIELDS = new Set(['thinking', 'thinking_type', 'none'])
 
 function requestId(context) {
@@ -69,7 +69,7 @@ function buildArkRequestBody(endpointId, imageDataURL, thinkingField = configure
       content: [
         {
           type: 'text',
-          text: '请读取这张课程表图片，严格只输出 JSON，不要 Markdown。按视觉上的星期列和节次行识别每门课程。格式：{"courses":[{"name":"课程名","weekday":1,"startPeriod":1,"endPeriod":2,"teacher":"教师","location":"教室","weeks":[1,2,3]}],"warning":""}。weekday 为 1-7，weeks 只填写图片明确出现的周次；无法确定时使用空数组。不要把图片标题、学期名称、星期标题或节次标题当作课程。'
+          text: '读取课程表图片。只输出紧凑单行 JSON，不要 Markdown、解释或换行。格式：{"courses":[{"name":"课程名","weekday":1,"startPeriod":1,"endPeriod":2,"teacher":"教师","location":"教室","weeks":[1,2,3]}],"warning":""}。weekday 为 1-7，weeks 只填图片明确出现的周次；无法确定用空数组。不要把标题、星期标题或节次标题当课程。'
         },
         { type: 'image_url', image_url: { url: imageDataURL } }
       ]
