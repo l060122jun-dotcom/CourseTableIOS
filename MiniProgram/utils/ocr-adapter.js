@@ -5,7 +5,7 @@ const MAX_UPLOAD_BYTES = 2 * 1024 * 1024
 
 function configuredOCR() {
   const ocr = localConfig.ocr || {}
-  if (ocr.mode !== 'cloud-function' || !ocr.envId || ocr.envId === 'your-cloud-env-id' || !ocr.functionName) throw new Error('尚未配置 OCR 服务。请检查 config.local.js 中的云环境和云函数名。')
+  if (ocr.mode !== 'cloud-function' || !ocr.envId || ocr.envId === 'your-cloud-env-id' || !ocr.functionName) throw new Error('尚未配置 OCR 服务。请检查 config.local.js 是否位于 MiniProgram 根目录且已重新编译。')
   if (!wx.cloud) throw new Error('当前基础库没有云开发能力，请升级微信开发者工具。')
   return ocr
 }
