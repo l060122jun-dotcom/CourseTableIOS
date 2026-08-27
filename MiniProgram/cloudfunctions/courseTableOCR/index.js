@@ -23,7 +23,7 @@ function parseCourses(detections) {
     const weekday = weekdays.length ? weekdays.reduce((best, day) => Math.abs(day.x - period.x) < Math.abs(best.x - period.x) ? day : best, weekdays[0]).weekday : ((index % 7) + 1)
     const nearby = items.filter(item => item !== period && item.y < period.y && item.y > period.y - 260 && Math.abs(item.x - period.x) < 220 && !ignored.test(item.text) && !/^\[.*\]$/.test(item.text)).sort((a, b) => a.y - b.y)
     if (!nearby.length) return null
-    const nameItem = nearby.find(item => !/课表|学期|学生|^20\d{2}[-－]/.test(item.text))
+    const nameItem = nearby.find(item => !/课表|学期|学生|课程表|第一学期|第二学期|^20\d{2}[-－]?\d{0,4}/.test(item.text) && !/^20\d{2}/.test(item.text) && !/^\d{2,4}(?:[-－]\d{1,4})?$/.test(item.text))
     if (!nameItem) return null
     const name = nameItem.text
     const location = (nearby.find(item => /楼|室|教室|场|馆/.test(item.text)) || {}).text || ''
