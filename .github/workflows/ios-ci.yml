@@ -82,7 +82,7 @@ jobs:
           echo "Using simulator: $UDID"
           python3 -c 'import subprocess,sys; subprocess.run(sys.argv[1:], timeout=90, check=True)' xcrun simctl boot "$UDID" || true
           sleep 12
-          APP=$(find build -name 'CourseTableApp.app' -type d | head -1)
+          APP=build/Build/Products/Debug-iphonesimulator/CourseTableApp.app
           test -n "$APP"
           python3 -c 'import subprocess,sys; subprocess.run(sys.argv[1:], timeout=90, check=True)' xcrun simctl install "$UDID" "$APP"
           python3 -c 'import subprocess,sys; subprocess.run(sys.argv[1:], timeout=60, check=True)' xcrun simctl launch "$UDID" com.codex.coursetable.app
