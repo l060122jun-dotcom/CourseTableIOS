@@ -8,14 +8,14 @@ struct CourseTableApp: App {
     var body: some Scene { WindowGroup { RootView() } }
 }
 
-private struct DemoCourse: Identifiable {
+private struct DemoCourse: Identifiable, Codable, Equatable {
     let id: UUID
     var course: Course
     var rule: MeetingRule
 }
 
 private struct RootView: View {
-    @State private var courses: [DemoCourse] = DemoCourse.samples
+    @State private var courses: [DemoCourse] = PersistenceStore.load() ?? DemoCourse.samples
     @State private var showingNewCourse = false
 
     var body: some View {
@@ -32,6 +32,23 @@ private struct RootView: View {
                 courses.append(DemoCourse(id: course.id, course: course, rule: rule))
             }
         }
+        .onChange(of: courses) { _, updated in PersistenceStore.save(updated) }
+    }
+}
+
+private enum PersistenceStore {
+    private static var url: URL {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("CourseTable", isDirectory: true)
+            .appendingPathComponent("courses.json")
+    }
+    static func load() -> [DemoCourse]? {
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        return try? JSONDecoder().decode([DemoCourse].self, from: data)
+    }
+    static func save(_ courses: [DemoCourse]) {
+        do { try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true); try JSONEncoder().encode(courses).write(to: url, options: .atomic) }
+        catch { print("Unable to save courses: \(error)") }
     }
 }
 

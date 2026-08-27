@@ -58,6 +58,21 @@ jobs:
           path: build/Build/Products/Debug-iphonesimulator/CourseTableApp.app
           if-no-files-found: error
 
+      - name: Create unsigned App Store archive
+        run: |
+          xcodebuild archive \
+            -project CourseTable.xcodeproj \
+            -scheme CourseTable \
+            -destination "generic/platform=iOS" \
+            -archivePath build/CourseTable.xcarchive \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO
+
+      - name: Upload archive for signing
+        uses: actions/upload-artifact@v4
+        with:
+          name: course-table-unsigned-archive
+          path: build/CourseTable.xcarchive
+
       - name: Launch simulator and capture effect screen
         run: |
           set -euxo pipefail
