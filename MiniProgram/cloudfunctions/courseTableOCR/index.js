@@ -3,7 +3,7 @@ const https = require('https')
 
 cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV })
 
-const FUNCTION_VERSION = '2026.08.27-json-recovery-v6'
+const FUNCTION_VERSION = '2026.08.27-output-8192-v7'
 const ARK_HOSTNAME = 'ark.cn-beijing.volces.com'
 const ARK_PATH = '/api/v3/chat/completions'
 const CONNECT_TIMEOUT_MS = 5000
@@ -14,7 +14,7 @@ const SYNC_BUDGET_MS = DOWNLOAD_TIMEOUT_MS + TOTAL_TIMEOUT_MS
 const MAX_IMAGE_BYTES = 2 * 1024 * 1024
 const MAX_BASE64_CHARS = 3 * 1024 * 1024
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024
-const MAX_OUTPUT_TOKENS = 1024
+const MAX_OUTPUT_TOKENS = 8192
 const THINKING_FIELDS = new Set(['thinking', 'thinking_type', 'none'])
 
 function requestId(context) {
