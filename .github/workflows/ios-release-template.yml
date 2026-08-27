@@ -1,0 +1,18 @@
+name: iOS Release (manual template)
+
+on:
+  workflow_dispatch:
+
+# This template is intentionally disabled until the repository owner configures
+# Apple signing and App Store Connect secrets in a protected GitHub Environment.
+jobs:
+  release:
+    if: ${{ false }}
+    runs-on: macos-15
+    environment: app-store
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure Apple signing
+        run: echo "Configure certificates and provisioning profiles in the protected environment."
+      - name: Build and upload
+        run: echo "Run xcodebuild archive, exportArchive, and App Store Connect upload after secrets are configured."
