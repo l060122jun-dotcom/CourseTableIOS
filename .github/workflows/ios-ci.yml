@@ -93,6 +93,8 @@ jobs:
           python3 -c 'import subprocess,sys; subprocess.run(sys.argv[1:], timeout=90, check=True)' xcrun simctl install "$UDID" "$APP"
           mkdir -p artifacts/screens
           for SCREEN in home import new-course detail settings; do
+            python3 -c 'import subprocess,sys; subprocess.run(sys.argv[1:], timeout=30, check=False)' xcrun simctl terminate "$UDID" com.codex.coursetable.app
+            sleep 1
             if [ "$SCREEN" = "home" ]; then
               python3 -c 'import subprocess,sys; subprocess.run(sys.argv[1:], timeout=60, check=True)' xcrun simctl launch "$UDID" com.codex.coursetable.app --demo-data
             else
