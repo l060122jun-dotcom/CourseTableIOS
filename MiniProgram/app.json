@@ -1,0 +1,27 @@
+{
+  "pages": [
+    "pages/index/index",
+    "pages/editor/editor",
+    "pages/import/import",
+    "pages/settings/settings"
+  ],
+  "window": {
+    "navigationBarTitleText": "课程表",
+    "navigationBarBackgroundColor": "#f6f8fb",
+    "navigationBarTextStyle": "black",
+    "backgroundColor": "#f6f8fb",
+    "backgroundTextStyle": "light"
+  },
+  "tabBar": {
+    "color": "#6b7280",
+    "selectedColor": "#1677ff",
+    "backgroundColor": "#ffffff",
+    "list": [
+      { "pagePath": "pages/index/index", "text": "课表" },
+      { "pagePath": "pages/import/import", "text": "导入" },
+      { "pagePath": "pages/settings/settings", "text": "设置" }
+    ]
+  },
+  "style": "v2",
+  "sitemapLocation": "sitemap.json"
+}

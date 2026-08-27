@@ -1,0 +1,1 @@
+{ "desc": "课程表小程序页面索引", "rules": [{ "action": "allow", "page": "*" }] }

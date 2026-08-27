@@ -1,0 +1,18 @@
+<view class="page">
+  <view class="header card">
+    <view><view class="title">{{table.name}}</view><view class="muted">第 {{table.currentWeek}} 周 · 共 {{table.totalWeeks}} 周</view></view>
+    <button class="button-primary add" bindtap="newCourse">新建课程</button>
+  </view>
+  <view class="week-head"><view class="period-label"></view><block wx:for="{{days}}" wx:key="*this"><view class="day">周{{item}}</view></block></view>
+  <scroll-view scroll-x="true" class="schedule-scroll">
+    <view class="schedule">
+      <block wx:for="{{periodRows}}" wx:key="index">
+        <view class="schedule-row"><view class="period-label"><text class="period-index">{{item.index}}</text><text class="period-time">{{item.start}}</text></view>
+          <block wx:for="{{days}}" wx:key="*this" wx:for-item="day" wx:for-index="dayIndex"><view class="cell"><block wx:for="{{courses}}" wx:key="id"><block wx:if="{{item.weekday === dayIndex + 1 && item.timingMode === 'period' && item.startPeriod === periodRows[index].index}}"><text style="color:{{item.color}}">{{item.name}}</text></block></block></view></block>
+        </view>
+      </block>
+    </view>
+  </scroll-view>
+  <view class="section-title" wx:if="{{customCourses.length}}">不规则时间课程</view>
+  <block wx:for="{{customCourses}}" wx:key="id"><view class="card custom-card" data-id="{{item.id}}" bindtap="openDetail"><view class="custom-icon">◷</view><view class="custom-main"><view class="course-name">{{item.name}}</view><view class="muted">周{{days[item.weekday - 1]}} · {{item.customStart}}–{{item.customEnd}}</view></view><view class="muted">{{item.location}}</view></view></block>
+</view>

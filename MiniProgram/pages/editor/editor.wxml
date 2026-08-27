@@ -1,0 +1,19 @@
+<view class="page">
+  <view class="card form">
+    <view class="form-row"><text class="form-label">课程名称</text><input placeholder="必填" value="{{name}}" bindinput="field" data-key="name" /></view>
+    <view class="form-row"><text class="form-label">教师</text><input placeholder="可选" value="{{teacher}}" bindinput="field" data-key="teacher" /></view>
+    <view class="form-row"><text class="form-label">教室</text><input placeholder="可选" value="{{location}}" bindinput="field" data-key="location" /></view>
+  </view>
+  <view class="card">
+    <view class="section-title">上课安排</view>
+    <picker mode="selector" range="{{dayNames}}" value="{{weekdayIndex}}" bindchange="dayChange"><view class="form-row"><text class="form-label">星期</text><text>{{dayNames[weekdayIndex]}}</text></view></picker>
+    <view class="mode-row"><button class="{{timingMode === 'period' ? 'active' : ''}}" data-mode="period" bindtap="modeChange">按节次</button><button class="{{timingMode === 'custom' ? 'active' : ''}}" data-mode="custom" bindtap="modeChange">自定义时间</button></view>
+    <block wx:if="{{timingMode === 'period'}}">
+      <picker mode="selector" range="{{periodNames}}" value="{{startPeriodIndex}}" bindchange="startPeriodChange"><view class="form-row"><text class="form-label">开始节次</text><text>第 {{startPeriodIndex + 1}} 节</text></view></picker>
+      <picker mode="selector" range="{{periodNames}}" value="{{endPeriodIndex}}" bindchange="endPeriodChange"><view class="form-row"><text class="form-label">结束节次</text><text>第 {{endPeriodIndex + 1}} 节</text></view></picker>
+    </block>
+    <block wx:else><view class="form-row"><text class="form-label">开始时间</text><picker mode="time" value="{{customStart}}" bindchange="timeChange" data-key="customStart">{{customStart}}</picker></view><view class="form-row"><text class="form-label">结束时间</text><picker mode="time" value="{{customEnd}}" bindchange="timeChange" data-key="customEnd">{{customEnd}}</picker></view></block>
+  </view>
+  <view class="card"><view class="section-title">重复周次</view><view class="muted">第 {{startWeek}}–{{endWeek}} 周 · 提前 {{reminderMinutes}} 分钟提醒</view></view>
+  <button class="button-primary save" bindtap="save">保存课程</button>
+</view>

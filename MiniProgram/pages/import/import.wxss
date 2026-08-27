@@ -1,0 +1,1 @@
+.hero { margin-top: 20rpx; }.hero .title { margin-bottom: 12rpx; }button { margin-bottom: 20rpx; }.tip { color: #a15c00; background: #fff7e6; }

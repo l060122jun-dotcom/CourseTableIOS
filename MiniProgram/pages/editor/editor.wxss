@@ -1,0 +1,1 @@
+.form-row { min-height: 88rpx; }.form-row text:last-child, .form-row picker { flex: 1; text-align: right; }.mode-row { display: flex; gap: 16rpx; padding: 22rpx 0; }.mode-row button { flex: 1; font-size: 25rpx; color: #667085; background: #f2f4f7; }.mode-row button.active { color: #1677ff; background: #eaf3ff; }.save { margin-top: 30rpx; }

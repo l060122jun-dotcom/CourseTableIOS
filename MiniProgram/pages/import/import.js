@@ -1,0 +1,2 @@
+const ocrAdapter = require('../../utils/ocr-adapter')
+Page({ data: { message: '', draft: null }, chooseImage() { wx.chooseMedia({ count: 1, mediaType: ['image'], sourceType: ['album', 'camera'], success: result => { const path = result.tempFiles[0].tempFilePath; this.setData({ message: '图片已选择，正在准备识别…' }); ocrAdapter.recognize(path).then(draft => this.setData({ draft, message: '' })).catch(error => this.setData({ message: error.message })) }, fail: error => this.setData({ message: '未选择图片：' + error.errMsg }) }) } })
