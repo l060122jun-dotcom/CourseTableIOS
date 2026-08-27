@@ -25,10 +25,11 @@ Page({
   savePeriods() { const document = store.load(); document.periods = this.data.periods.map((period, index) => ({ index: index + 1, start: period.start, end: period.end })); store.save(document); this.setData({ document, periods: document.periods }); wx.showToast({ title: '时间设置已保存', icon: 'success' }) },
   async exportCalendar() {
     const document = store.load()
+    const exportTable = { ...(document.table || {}), calendarReminderMinutes: Number(this.data.calendarReminderMinutes), calendarReminderType: this.data.calendarReminderType === 'alarm' ? 'alarm' : 'notification' }
     wx.showLoading({ title: '正在生成日历' })
     try {
-      const content = ics.generateCalendar(document.courses || [], document.table || {}, document.periods || [], { reminderMinutesOverride: document.table && document.table.calendarReminderMinutes, reminderTypeOverride: document.table && document.table.calendarReminderType })
-      await ics.writeAndOpenCalendar(content, (document.table && document.table.name) || '整学期课程表')
+      const content = ics.generateCalendar(document.courses || [], exportTable, document.periods || [], { reminderMinutesOverride: exportTable.calendarReminderMinutes, reminderTypeOverride: exportTable.calendarReminderType })
+      await ics.writeAndOpenCalendar(content, exportTable.name || '整学期课程表')
     } catch (error) {
       wx.showModal({ title: '无法打开日历文件', content: error.message || '日历导出失败', showCancel: false })
     } finally {
