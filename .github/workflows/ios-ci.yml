@@ -50,6 +50,14 @@ jobs:
             -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO
 
+      - name: Upload unsigned simulator build
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: course-table-simulator-build
+          path: build/Build/Products/Debug-iphonesimulator/CourseTableApp.app
+          if-no-files-found: error
+
       - name: Launch simulator and capture effect screen
         run: |
           set -euxo pipefail
@@ -68,6 +76,7 @@ jobs:
           python3 -c 'import subprocess,sys; subprocess.run(sys.argv[1:], timeout=60, check=True)' xcrun simctl io "$UDID" screenshot artifacts/course-table.png
 
       - name: Upload effect screenshot
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: course-table-effect
