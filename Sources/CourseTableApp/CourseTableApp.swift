@@ -350,7 +350,6 @@ private struct ImportView: View {
                 .fileImporter(isPresented: $showFileImporter, allowedContentTypes: [.image], allowsMultipleSelection: false) { result in
                     switch result { case .success(let urls): importFile(urls[0]); case .failure(let error): errorMessage = "选择文件失败：\(error.localizedDescription)" }
                 }
-            Label("拍照导入课程表", systemImage: "camera").foregroundStyle(.secondary)
             if isScanning { ProgressView("正在识别课程与时间…") }
             if let draft {
                 Section("识别草稿（请确认）") {
