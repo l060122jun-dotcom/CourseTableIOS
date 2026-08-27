@@ -66,5 +66,6 @@ AppSecret、OCR 服务密钥、云函数密钥、代码上传密钥、负责人�
 - 点击“新建课程”，分别测试“按节次”和“自定义时间”，保存后返回课表；数据写入 `course-table-document-v1`。
 - 图片导入页使用 `wx.chooseMedia`，未配置 OCR 时应看到“尚未配置 OCR 服务”提示。
 - 设置页检查提醒适配占位，不会伪称已经写入系统日历。
+- 提醒授权：复制 `config.local.example.js` 为 `config.local.js`，填写微信后台申请的 `subscribeMessageTemplateIds`，再点击设置页“订阅课程提醒”。本骨架只负责请求用户授权，不包含服务端发送。
 
-本目录不包含图标资源，使用文字 tabBar，避免导入后出现缺失图片资源。
+本目录不包含图标资源，使用文字 tabBar，避免导入后出现缺失图片资源。`config.local.js` 仅用于本地配置，不要提交。
