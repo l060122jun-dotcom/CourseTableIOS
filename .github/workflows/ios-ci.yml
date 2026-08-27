@@ -49,13 +49,12 @@ jobs:
             -destination "generic/platform=iOS Simulator" \
             CODE_SIGNING_ALLOWED=NO
 
-      - name: Test and capture simulator screen
+      - name: Launch simulator and capture effect screen
         run: |
           DEVICE=$(xcrun simctl list devices available | grep -m1 -E 'iPhone .* \(' | sed -E 's/.*iPhone/ iPhone/' | sed -E 's/ \([A-F0-9-]+\).*//')
           UDID=$(xcrun simctl list devices available | grep -m1 -E 'iPhone .* \(' | sed -E 's/.*\(([A-F0-9-]+)\).*/\1/')
           xcrun simctl boot "$UDID" || true
           xcrun simctl bootstatus "$UDID" -b
-          xcodebuild test -project CourseTable.xcodeproj -scheme CourseTable -destination "platform=iOS Simulator,id=$UDID" CODE_SIGNING_ALLOWED=NO
           xcodebuild -project CourseTable.xcodeproj -scheme CourseTable -sdk iphonesimulator -configuration Debug -derivedDataPath build CODE_SIGNING_ALLOWED=NO build
           xcrun simctl install "$UDID" build/Build/Products/Debug-iphonesimulator/课程表.app || xcrun simctl install "$UDID" build/Build/Products/Debug-iphonesimulator/CourseTableApp.app
           xcrun simctl launch "$UDID" com.codex.coursetable.app
