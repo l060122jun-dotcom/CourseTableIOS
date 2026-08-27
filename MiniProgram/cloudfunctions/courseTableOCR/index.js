@@ -3,7 +3,7 @@ const https = require('https')
 
 cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV })
 
-const FUNCTION_VERSION = '2026.08.27-timeout-v2'
+const FUNCTION_VERSION = '2026.08.27-timeout-v3'
 const ARK_HOSTNAME = 'ark.cn-beijing.volces.com'
 const ARK_PATH = '/api/v3/chat/completions'
 const CONNECT_TIMEOUT_MS = 5000
@@ -50,12 +50,16 @@ function detectImageMime(buffer) {
   throw serviceError('图片格式不受支持，请选择 JPG、PNG 或 WebP 图片', 'UNSUPPORTED_IMAGE_FORMAT')
 }
 
-function arkRequest(apiKey, endpointId, imageDataURL, diagnostics) {
-  const body = JSON.stringify({
+function buildArkRequestBody(endpointId, imageDataURL) {
+  return JSON.stringify({
     model: endpointId,
     temperature: 0,
     max_tokens: 2048,
     stream: false,
+    // Ark Chat Completions official reasoning switch. OCR only needs
+    // structured extraction, so avoid spending the short function budget on
+    // hidden reasoning tokens.
+    thinking: { type: 'disabled' },
     messages: [{
       role: 'user',
       content: [
@@ -67,6 +71,10 @@ function arkRequest(apiKey, endpointId, imageDataURL, diagnostics) {
       ]
     }]
   })
+}
+
+function arkRequest(apiKey, endpointId, imageDataURL, diagnostics) {
+  const body = buildArkRequestBody(endpointId, imageDataURL)
 
   return new Promise((resolve, reject) => {
     const startedAt = Date.now()
@@ -282,5 +290,6 @@ exports._test = {
   detectImageMime,
   parseDraft,
   contentText,
+  buildArkRequestBody,
   constants: { FUNCTION_VERSION, DOWNLOAD_TIMEOUT_MS, ARK_TIMEOUT_MS, TOTAL_TIMEOUT_MS, MAX_IMAGE_BYTES, MAX_BASE64_CHARS }
 }
