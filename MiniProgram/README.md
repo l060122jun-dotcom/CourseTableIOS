@@ -35,9 +35,11 @@
    wx.cloud.callFunction({ name: 'courseTableOCR', data: { action: 'health' } }).then(console.log)
    ```
 
-   返回的 `health.functionVersion` 应为源码中的版本，且 `health.arkConfigured` 应为 `true`。再打开“导入”页选择图片；客户端会先压缩并限制到 2 MB，云函数日志会依次出现 `download.start`、`download.end`、`image.ready`、`ark.request.start`、`ark.connection.ready`、`ark.response.headers` 和 `complete`。失败日志只包含阶段、耗时、大小和错误码，不包含 API Key。
+   返回的 `health.functionVersion` 应为源码中的版本，且 `health.arkConfigured` 应为 `true`。默认会用当前 Chat Completions 的 `thinking: { type: 'disabled' }` 关闭推理并把输出限制到 1024 token。若端点报“不支持 thinking 参数”，可在云函数环境变量中把 `ARK_THINKING_FIELD` 设为 `none`；只有旧端点文档明确要求时才设为 `thinking_type`。三个模式互斥，不会同时发送两个字段。`health.thinkingField` 可确认实际模式，`health.endpointCapabilityHint` 会提示端点必须绑定支持图片输入的视觉/多模态模型。
 
-   当前源码版本为 `2026.08.27-timeout-v2`。如果健康检查仍返回旧版本，说明云函数没有重新部署，需再次右键该目录执行“上传并部署：云端安装依赖”。如果导入仍失败，按最后一个日志阶段判断：
+   再打开“导入”页选择图片；客户端会先压缩并限制到 2 MB，云函数日志会依次出现 `download.start`、`download.end`、`image.ready`、`ark.request.start`、`ark.connection.ready`、`ark.response.headers` 和 `complete`。失败日志只包含阶段、耗时、大小和错误码，不包含 API Key。
+
+   当前源码版本为 `2026.08.27-fast-v4`。同步云函数受约 30 秒的平台边界限制，因此不能把等待时间直接改成 60 秒：当前安全预算是下载 5 秒加方舟请求 21 秒，总计约 26 秒，健康检查的 `syncBudgetMs` 会返回 `26000`。如果健康检查仍返回旧版本，说明云函数没有重新部署，需再次右键该目录执行“上传并部署：云端安装依赖”。如果导入仍失败，按最后一个日志阶段判断：
 
    - `DOWNLOAD_TIMEOUT`：云存储下载或 fileID 权限问题；
    - `ARK_CONNECT_TIMEOUT`：云函数到火山方舟的 DNS/TLS/出网问题；

@@ -3,16 +3,19 @@ const https = require('https')
 
 cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV })
 
-const FUNCTION_VERSION = '2026.08.27-timeout-v3'
+const FUNCTION_VERSION = '2026.08.27-fast-v4'
 const ARK_HOSTNAME = 'ark.cn-beijing.volces.com'
 const ARK_PATH = '/api/v3/chat/completions'
 const CONNECT_TIMEOUT_MS = 5000
 const DOWNLOAD_TIMEOUT_MS = 5000
 const ARK_TIMEOUT_MS = 20000
 const TOTAL_TIMEOUT_MS = 21000
+const SYNC_BUDGET_MS = DOWNLOAD_TIMEOUT_MS + TOTAL_TIMEOUT_MS
 const MAX_IMAGE_BYTES = 2 * 1024 * 1024
 const MAX_BASE64_CHARS = 3 * 1024 * 1024
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024
+const MAX_OUTPUT_TOKENS = 1024
+const THINKING_FIELDS = new Set(['thinking', 'thinking_type', 'none'])
 
 function requestId(context) {
   return (context && context.requestId) || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
@@ -50,16 +53,17 @@ function detectImageMime(buffer) {
   throw serviceError('图片格式不受支持，请选择 JPG、PNG 或 WebP 图片', 'UNSUPPORTED_IMAGE_FORMAT')
 }
 
-function buildArkRequestBody(endpointId, imageDataURL) {
-  return JSON.stringify({
+function configuredThinkingField() {
+  const value = String(process.env.ARK_THINKING_FIELD || 'thinking').trim().toLowerCase()
+  return THINKING_FIELDS.has(value) ? value : 'thinking'
+}
+
+function buildArkRequestBody(endpointId, imageDataURL, thinkingField = configuredThinkingField()) {
+  const body = {
     model: endpointId,
     temperature: 0,
-    max_tokens: 2048,
+    max_tokens: MAX_OUTPUT_TOKENS,
     stream: false,
-    // Ark Chat Completions official reasoning switch. OCR only needs
-    // structured extraction, so avoid spending the short function budget on
-    // hidden reasoning tokens.
-    thinking: { type: 'disabled' },
     messages: [{
       role: 'user',
       content: [
@@ -70,11 +74,31 @@ function buildArkRequestBody(endpointId, imageDataURL) {
         { type: 'image_url', image_url: { url: imageDataURL } }
       ]
     }]
-  })
+  }
+
+  // Current Ark Chat Completions uses `thinking`. Some older endpoints only
+  // accept `thinking_type`, while others reject both. Keep the fields mutually
+  // exclusive so compatibility never turns into an unknown-parameter 400.
+  if (thinkingField === 'thinking') body.thinking = { type: 'disabled' }
+  if (thinkingField === 'thinking_type') body.thinking_type = 'disabled'
+  return JSON.stringify(body)
+}
+
+function arkConfigurationHint(statusCode, message, thinkingField) {
+  if (statusCode !== 400) return ''
+  const normalized = String(message || '').toLowerCase()
+  if (normalized.includes('thinking') || normalized.includes('unknown') || normalized.includes('parameter')) {
+    return `当前端点可能不支持 ${thinkingField} 字段；请将 ARK_THINKING_FIELD 改为 none，或仅在旧端点文档明确要求时改为 thinking_type。`
+  }
+  if (normalized.includes('image') || normalized.includes('vision') || normalized.includes('multimodal') || normalized.includes('model')) {
+    return '请确认 ARK_ENDPOINT_ID 绑定的是支持图片输入的视觉/多模态模型。'
+  }
+  return '请确认 ARK_ENDPOINT_ID 绑定支持图片输入的模型，并核对该端点支持的 Chat Completions 参数。'
 }
 
 function arkRequest(apiKey, endpointId, imageDataURL, diagnostics) {
-  const body = buildArkRequestBody(endpointId, imageDataURL)
+  const thinkingField = configuredThinkingField()
+  const body = buildArkRequestBody(endpointId, imageDataURL, thinkingField)
 
   return new Promise((resolve, reject) => {
     const startedAt = Date.now()
@@ -111,6 +135,8 @@ function arkRequest(apiKey, endpointId, imageDataURL, diagnostics) {
 
     log('ark.request.start', Object.assign({}, diagnostics, {
       requestBytes: Buffer.byteLength(body),
+      maxOutputTokens: MAX_OUTPUT_TOKENS,
+      thinkingField,
       connectTimeoutMs: CONNECT_TIMEOUT_MS,
       responseTimeoutMs: ARK_TIMEOUT_MS,
       totalTimeoutMs: TOTAL_TIMEOUT_MS
@@ -161,7 +187,8 @@ function arkRequest(apiKey, endpointId, imageDataURL, diagnostics) {
         }
         if ((response.statusCode || 500) < 200 || (response.statusCode || 500) >= 300 || data.error) {
           const message = data.error && data.error.message ? data.error.message : `火山方舟 HTTP ${response.statusCode}`
-          return fail(serviceError(message, 'ARK_HTTP_ERROR', { statusCode: response.statusCode, arkLogId }))
+          const hint = arkConfigurationHint(response.statusCode, message, thinkingField)
+          return fail(serviceError(message, 'ARK_HTTP_ERROR', { statusCode: response.statusCode, arkLogId, hint }))
         }
         succeed(data)
       })
@@ -224,9 +251,15 @@ exports.main = async (event, context) => {
       arkConfigured: Boolean(process.env.ARK_API_KEY && process.env.ARK_ENDPOINT_ID),
       arkHostname: ARK_HOSTNAME,
       arkPath: ARK_PATH,
+      endpointConfigured: Boolean(process.env.ARK_ENDPOINT_ID),
+      endpointCapabilityHint: 'ARK_ENDPOINT_ID 必须绑定支持图片输入的视觉/多模态模型',
+      thinkingField: configuredThinkingField(),
+      maxOutputTokens: MAX_OUTPUT_TOKENS,
       maxImageBytes: MAX_IMAGE_BYTES,
       downloadTimeoutMs: DOWNLOAD_TIMEOUT_MS,
-      arkTimeoutMs: ARK_TIMEOUT_MS
+      arkTimeoutMs: ARK_TIMEOUT_MS,
+      syncBudgetMs: SYNC_BUDGET_MS,
+      syncBudgetHint: '同步云函数受约 30 秒平台边界限制；当前总预算 26 秒，不能直接等待 60 秒'
     }
     log('health', Object.assign({ requestId: id }, health))
     return { health, meta: meta() }
@@ -291,5 +324,6 @@ exports._test = {
   parseDraft,
   contentText,
   buildArkRequestBody,
-  constants: { FUNCTION_VERSION, DOWNLOAD_TIMEOUT_MS, ARK_TIMEOUT_MS, TOTAL_TIMEOUT_MS, MAX_IMAGE_BYTES, MAX_BASE64_CHARS }
+  arkConfigurationHint,
+  constants: { FUNCTION_VERSION, DOWNLOAD_TIMEOUT_MS, ARK_TIMEOUT_MS, TOTAL_TIMEOUT_MS, SYNC_BUDGET_MS, MAX_IMAGE_BYTES, MAX_BASE64_CHARS, MAX_OUTPUT_TOKENS }
 }
