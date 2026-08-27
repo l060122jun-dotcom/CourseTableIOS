@@ -1,20 +1,19 @@
 <view class="page">
-  <view class="header card">
-    <view><view class="title">{{table.name}}</view><view class="muted">第 {{table.currentWeek}} 周 · 共 {{table.totalWeeks}} 周</view></view>
-    <button class="button-primary add" bindtap="newCourse">新建课程</button>
-  </view>
+  <view class="topbar"><view class="top-main"><view class="title">{{table.name}}</view><view class="top-date">{{todayLabel}}</view></view><view class="list-button" bindtap="openSettings">☷</view></view>
+  <view class="week-toolbar"><picker mode="selector" range="{{weekLabels}}" value="{{weekIndex}}" bindchange="weekChange"><view class="week-pill">{{currentWeek}} 周 <text class="chevron">⌄</text></view></picker></view>
   <scroll-view scroll-x="true" class="schedule-scroll">
     <view class="schedule-content">
-      <view class="week-head"><view class="period-label"></view><block wx:for="{{days}}" wx:key="*this"><view class="day">周{{item}}</view></block></view>
+      <view class="week-head"><view class="period-label"></view><block wx:for="{{dayHeaders}}" wx:key="date"><view class="day {{item.current ? 'today' : ''}}"><text class="day-label">周{{item.label}}</text><text class="day-date">{{item.date}}</text></view></block></view>
       <view class="schedule">
-      <block wx:for="{{periodRows}}" wx:key="index">
-        <view class="schedule-row"><view class="period-label"><text class="period-index">{{item.index}}</text><text class="period-time">{{item.start}}</text></view>
-          <block wx:for="{{days}}" wx:key="*this" wx:for-item="day" wx:for-index="dayIndex"><view class="cell"><block wx:for="{{courses}}" wx:key="id"><block wx:if="{{item.weekday === dayIndex + 1 && item.timingMode === 'period' && item.startPeriod === periodRows[index].index}}"><text style="color:{{item.color}}">{{item.name}}</text></block></block></view></block>
+      <block wx:for="{{periodRows}}" wx:key="index" wx:for-item="period"><view class="schedule-row"><view class="period-label"><text class="period-index">{{period.index}}</text><text class="period-time">{{period.start}}</text><text class="period-time">{{period.end}}</text></view>
+          <block wx:for="{{days}}" wx:key="*this" wx:for-item="day" wx:for-index="dayIndex"><view class="cell"><block wx:for="{{visibleCourses}}" wx:key="id" wx:for-item="course"><block wx:if="{{course.weekday === dayIndex + 1 && course.timingMode === 'period' && course.startPeriod === period.index}}"><view class="course-block" style="background-color:{{course.color}}" data-id="{{course.id}}" bindtap="openDetail"><text class="course-name">{{course.name}}</text><text class="course-meta">{{course.location}}</text></view></block></block></view></block>
         </view>
+        <view wx:if="{{period.index === 4}}" class="break-row"><text>午休</text></view><view wx:if="{{period.index === 8}}" class="break-row"><text>晚休</text></view>
       </block>
       </view>
     </view>
   </scroll-view>
   <view class="section-title" wx:if="{{customCourses.length}}">不规则时间课程</view>
   <block wx:for="{{customCourses}}" wx:key="id"><view class="card custom-card" data-id="{{item.id}}" bindtap="openDetail"><view class="custom-icon">◷</view><view class="custom-main"><view class="course-name">{{item.name}}</view><view class="muted">周{{days[item.weekday - 1]}} · {{item.customStart}}–{{item.customEnd}}</view></view><view class="muted">{{item.location}}</view></view></block>
+  <button class="fab" bindtap="newCourse">＋</button>
 </view>
