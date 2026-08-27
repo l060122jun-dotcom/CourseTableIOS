@@ -8,9 +8,9 @@
   </view>
   <view wx:if="{{message}}" class="card tip">{{message}}</view>
   <view wx:if="{{healthMessage}}" class="card health">{{healthMessage}}</view>
-  <view wx:if="{{draft}}" class="result" bindtouchstart="weekTouchStart" bindtouchend="weekTouchEnd">
+  <view wx:if="{{draft}}" class="result {{transitionClass}}" bindtouchstart="weekTouchStart" bindtouchend="weekTouchEnd">
     <view class="stepbar"><text bindtap="backToChoose">上一步</text><text class="step-current">确认识别结果</text><text bindtap="confirmImport">下一步</text></view>
-    <view class="week-switch"><button bindtap="previousWeek">上一周</button><text>第 {{currentWeek}} 周</text><button bindtap="nextWeek">下一周</button></view>
+    <picker mode="selector" range="{{weekOptions}}" value="{{currentWeekIndex}}" bindchange="weekChange"><view class="week-switch">第 {{currentWeek}} 周 <text class="week-picker-hint">选择周次⌄</text></view></picker>
     <view class="week-head"><view class="period-label"></view><block wx:for="{{days}}" wx:key="*this"><view class="day">周{{item}}</view></block></view>
     <block wx:for="{{periods}}" wx:key="index" wx:for-item="period">
       <view class="schedule-row"><view class="period-label"><text>{{period.index}}</text><text class="period-time">{{period.start}}</text><text class="period-time">{{period.end}}</text></view>

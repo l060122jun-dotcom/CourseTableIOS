@@ -10,8 +10,8 @@ function courseColor(name) {
 }
 
 Page({
-  data: { message: '', healthMessage: '', draft: null, previewCourses: [], visibleCourses: [], currentWeek: 1, totalWeeks: 18, touchStartX: 0, touchStartY: 0, periods: [], days: ['一', '二', '三', '四', '五', '六', '日'] },
-  onShow() { const document = store.load(); this.setData({ periods: document.periods || [], currentWeek: document.table.currentWeek || 1, totalWeeks: document.table.totalWeeks || 18 }) },
+  data: { message: '', healthMessage: '', draft: null, previewCourses: [], visibleCourses: [], currentWeek: 1, currentWeekIndex: 0, totalWeeks: 18, weekOptions: [], touchStartX: 0, touchStartY: 0, transitionClass: '', periods: [], days: ['一', '二', '三', '四', '五', '六', '日'] },
+  onShow() { const document = store.load(); const totalWeeks = document.table.totalWeeks || 18; const currentWeek = Math.min(document.table.currentWeek || 1, totalWeeks); this.setData({ periods: document.periods || [], currentWeek, currentWeekIndex: currentWeek - 1, totalWeeks, weekOptions: Array.from({ length: totalWeeks }, (_, index) => `第 ${index + 1} 周`) }) },
   updateVisibleCourses(courses, week) {
     const visibleCourses = courses.filter(course => {
       const weeks = Array.isArray(course.weeks) ? course.weeks.filter(Number.isFinite) : []
@@ -21,8 +21,13 @@ Page({
     })
     this.setData({ visibleCourses })
   },
-  previousWeek() { if (this.data.currentWeek > 1) { const week = this.data.currentWeek - 1; this.setData({ currentWeek: week }); this.updateVisibleCourses(this.data.previewCourses, week) } },
-  nextWeek() { if (this.data.currentWeek < this.data.totalWeeks) { const week = this.data.currentWeek + 1; this.setData({ currentWeek: week }); this.updateVisibleCourses(this.data.previewCourses, week) } },
+  switchWeek(week, direction) {
+    if (week < 1 || week > this.data.totalWeeks || week === this.data.currentWeek) return
+    this.setData({ currentWeek: week, currentWeekIndex: week - 1, transitionClass: direction ? `slide-${direction}` : '' })
+    this.updateVisibleCourses(this.data.previewCourses, week)
+    if (direction) setTimeout(() => this.setData({ transitionClass: '' }), 220)
+  },
+  weekChange(event) { this.switchWeek(Number(event.detail.value) + 1) },
   weekTouchStart(event) {
     const touch = event.touches && event.touches[0]
     if (touch) this.setData({ touchStartX: touch.pageX, touchStartY: touch.pageY })
@@ -33,8 +38,8 @@ Page({
     const dx = touch.pageX - this.data.touchStartX
     const dy = touch.pageY - this.data.touchStartY
     if (Math.abs(dx) < 50 || Math.abs(dx) <= Math.abs(dy)) return
-    if (dx < 0) this.nextWeek()
-    else this.previousWeek()
+    if (dx < 0) this.switchWeek(this.data.currentWeek + 1, 'left')
+    else this.switchWeek(this.data.currentWeek - 1, 'right')
   },
   checkHealth() {
     this.setData({ healthMessage: '正在检查 OCR 服务…' })
