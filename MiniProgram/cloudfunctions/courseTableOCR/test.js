@@ -10,6 +10,8 @@ const requestBody = JSON.parse(_test.buildArkRequestBody('endpoint-test', 'data:
 assert.deepEqual(requestBody.thinking, { type: 'disabled' })
 assert.equal(requestBody.thinking_type, undefined)
 assert.equal(requestBody.max_tokens, 4096)
+assert.match(requestBody.messages[0].content[0].text, /紧凑单行 JSON/)
+assert.match(requestBody.messages[0].content[0].text, /不要 Markdown、解释或换行/)
 assert.equal(requestBody.model, 'endpoint-test')
 assert.equal(requestBody.messages[0].content[1].image_url.url, 'data:image/png;base64,AA==')
 
