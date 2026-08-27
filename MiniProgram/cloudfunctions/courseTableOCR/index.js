@@ -3,14 +3,14 @@ const https = require('https')
 
 cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV })
 
-const FUNCTION_VERSION = '2026.08.27-compact-4096-v8'
+const FUNCTION_VERSION = '2026.08.27-timeout-26s-v9'
 const ARK_HOSTNAME = 'ark.cn-beijing.volces.com'
 const ARK_PATH = '/api/v3/chat/completions'
 const CONNECT_TIMEOUT_MS = 5000
 const DOWNLOAD_TIMEOUT_MS = 5000
-const ARK_TIMEOUT_MS = 20000
-const TOTAL_TIMEOUT_MS = 21000
-const SYNC_BUDGET_MS = DOWNLOAD_TIMEOUT_MS + TOTAL_TIMEOUT_MS
+const ARK_TIMEOUT_MS = 26000
+const TOTAL_TIMEOUT_MS = 27000
+const SYNC_BUDGET_MS = 29000
 const MAX_IMAGE_BYTES = 2 * 1024 * 1024
 const MAX_BASE64_CHARS = 3 * 1024 * 1024
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024
@@ -96,9 +96,15 @@ function arkConfigurationHint(statusCode, message, thinkingField) {
   return '请确认 ARK_ENDPOINT_ID 绑定支持图片输入的模型，并核对该端点支持的 Chat Completions 参数。'
 }
 
-function arkRequest(apiKey, endpointId, imageDataURL, diagnostics) {
+function effectiveArkTotalTimeout(syncDeadlineAt, now = Date.now()) {
+  if (!Number.isFinite(syncDeadlineAt)) return TOTAL_TIMEOUT_MS
+  return Math.max(1000, Math.min(TOTAL_TIMEOUT_MS, syncDeadlineAt - now))
+}
+
+function arkRequest(apiKey, endpointId, imageDataURL, diagnostics, syncDeadlineAt) {
   const thinkingField = configuredThinkingField()
   const body = buildArkRequestBody(endpointId, imageDataURL, thinkingField)
+  const effectiveTotalTimeoutMs = effectiveArkTotalTimeout(syncDeadlineAt)
 
   return new Promise((resolve, reject) => {
     const startedAt = Date.now()
@@ -130,8 +136,8 @@ function arkRequest(apiKey, endpointId, imageDataURL, diagnostics) {
       abort(serviceError('连接火山方舟超时，请稍后重试', 'ARK_CONNECT_TIMEOUT', { timeoutMs: CONNECT_TIMEOUT_MS }))
     }, CONNECT_TIMEOUT_MS)
     const totalTimer = setTimeout(() => {
-      abort(serviceError('火山方舟识别超过 21 秒，已提前终止以避免云函数 30 秒超时', 'ARK_TOTAL_TIMEOUT', { timeoutMs: TOTAL_TIMEOUT_MS }))
-    }, TOTAL_TIMEOUT_MS)
+      abort(serviceError(`火山方舟未能在本次剩余的 ${Math.round(effectiveTotalTimeoutMs / 1000)} 秒同步预算内完成，已提前终止以避免云函数 30 秒超时`, 'ARK_TOTAL_TIMEOUT', { timeoutMs: effectiveTotalTimeoutMs, configuredTimeoutMs: TOTAL_TIMEOUT_MS }))
+    }, effectiveTotalTimeoutMs)
 
     log('ark.request.start', Object.assign({}, diagnostics, {
       requestBytes: Buffer.byteLength(body),
@@ -139,7 +145,8 @@ function arkRequest(apiKey, endpointId, imageDataURL, diagnostics) {
       thinkingField,
       connectTimeoutMs: CONNECT_TIMEOUT_MS,
       responseTimeoutMs: ARK_TIMEOUT_MS,
-      totalTimeoutMs: TOTAL_TIMEOUT_MS
+      totalTimeoutMs: effectiveTotalTimeoutMs,
+      configuredTotalTimeoutMs: TOTAL_TIMEOUT_MS
     }))
 
     request = https.request({
@@ -201,7 +208,7 @@ function arkRequest(apiKey, endpointId, imageDataURL, diagnostics) {
       })
     })
     request.setTimeout(ARK_TIMEOUT_MS, () => {
-      request.destroy(serviceError('火山方舟 20 秒内没有完成响应，已主动终止', 'ARK_RESPONSE_TIMEOUT', { timeoutMs: ARK_TIMEOUT_MS }))
+      request.destroy(serviceError('火山方舟 26 秒内没有完成响应，已主动终止', 'ARK_RESPONSE_TIMEOUT', { timeoutMs: ARK_TIMEOUT_MS }))
     })
     request.on('error', fail)
     request.write(body)
@@ -420,8 +427,9 @@ exports.main = async (event, context) => {
       maxImageBytes: MAX_IMAGE_BYTES,
       downloadTimeoutMs: DOWNLOAD_TIMEOUT_MS,
       arkTimeoutMs: ARK_TIMEOUT_MS,
+      arkTotalTimeoutMs: TOTAL_TIMEOUT_MS,
       syncBudgetMs: SYNC_BUDGET_MS,
-      syncBudgetHint: '同步云函数受约 30 秒平台边界限制；当前总预算 26 秒，不能直接等待 60 秒'
+      syncBudgetHint: '同步云函数受约 30 秒平台边界限制；端到端预算 29 秒，图片下载耗时会从方舟 27 秒上限中扣除，不能直接等待 60 秒'
     }
     log('health', Object.assign({ requestId: id }, health))
     return { health, meta: meta() }
@@ -457,7 +465,8 @@ exports.main = async (event, context) => {
       process.env.ARK_API_KEY,
       process.env.ARK_ENDPOINT_ID,
       `data:${mime};base64,${imageBase64}`,
-      { requestId: id, imageBytes: image.length, base64Chars: imageBase64.length }
+      { requestId: id, imageBytes: image.length, base64Chars: imageBase64.length },
+      startedAt + SYNC_BUDGET_MS
     )
     const content = contentText(response)
     if (!content) throw serviceError('火山方舟没有返回识别内容', 'ARK_EMPTY_CONTENT')
@@ -490,6 +499,7 @@ exports._test = {
   recoveredCourseObjects,
   contentText,
   buildArkRequestBody,
+  effectiveArkTotalTimeout,
   arkConfigurationHint,
   constants: { FUNCTION_VERSION, DOWNLOAD_TIMEOUT_MS, ARK_TIMEOUT_MS, TOTAL_TIMEOUT_MS, SYNC_BUDGET_MS, MAX_IMAGE_BYTES, MAX_BASE64_CHARS, MAX_OUTPUT_TOKENS }
 }
