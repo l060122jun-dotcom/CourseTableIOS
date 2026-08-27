@@ -10,15 +10,37 @@ struct CourseTableApp: App {
     var body: some Scene { WindowGroup { RootView() } }
 }
 
+private enum PreviewScreen: String {
+    case `import` = "import"
+    case newCourse = "new-course"
+    case detail
+    case settings
+
+    init?(arguments: [String]) {
+        guard let value = arguments.first(where: { $0.hasPrefix("--screen=") })?.split(separator: "=", maxSplits: 1).last else { return nil }
+        self.init(rawValue: String(value))
+    }
+
+    var tab: Int {
+        switch self { case .import: return 1; case .settings: return 2; case .newCourse, .detail: return 0 }
+    }
+}
+
 private struct RootView: View {
     @State private var document: ScheduleDocument
     @State private var showingNewCourse = false
+    @State private var showingDetailPreview = false
+    @State private var selectedTab = 0
     @State private var storageLocked: Bool
     @State private var storageMessage: String?
 
     init() {
-        if ProcessInfo.processInfo.arguments.contains("--demo-data") {
+        let previewScreen = PreviewScreen(arguments: ProcessInfo.processInfo.arguments)
+        if ProcessInfo.processInfo.arguments.contains("--demo-data") || previewScreen != nil {
             _document = State(initialValue: .preview)
+            _selectedTab = State(initialValue: previewScreen?.tab ?? 0)
+            _showingNewCourse = State(initialValue: previewScreen == .newCourse)
+            _showingDetailPreview = State(initialValue: previewScreen == .detail)
             _storageLocked = State(initialValue: false)
             return
         }
@@ -34,22 +56,27 @@ private struct RootView: View {
     }
 
     var body: some View {
-        TabView {
+        TabView(selection: $selectedTab) {
             NavigationStack {
                 ScheduleView(document: document, addAction: beginAddingCourse)
                     .navigationTitle("课程表")
             }
-                .tabItem { Label("课表", systemImage: "calendar") }
+                .tabItem { Label("课表", systemImage: "calendar") }.tag(0)
             NavigationStack {
                 ImportView(table: document.table, periods: document.periods, onSave: append)
                     .navigationTitle("图片导入")
             }
-                .tabItem { Label("导入", systemImage: "viewfinder") }
+                .tabItem { Label("导入", systemImage: "viewfinder") }.tag(1)
             NavigationStack { SettingsView(document: document).navigationTitle("设置") }
-                .tabItem { Label("设置", systemImage: "gearshape") }
+                .tabItem { Label("设置", systemImage: "gearshape") }.tag(2)
         }
         .sheet(isPresented: $showingNewCourse) {
             CourseEditorSheet(table: document.table, periods: document.periods, onSave: append)
+        }
+        .sheet(isPresented: $showingDetailPreview) {
+            if let item = document.courses.first {
+                CourseDetailView(item: item, table: document.table, periods: document.periods)
+            }
         }
         .onChange(of: document) { _, updated in
             guard !storageLocked, !ProcessInfo.processInfo.arguments.contains("--demo-data") else { return }
