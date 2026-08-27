@@ -41,7 +41,12 @@ function foldLine(line) {
 function dateParts(value) {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value || ''))
   if (!match) throw new Error('请先在设置中填写正确的第一周日期')
-  return { year: Number(match[1]), month: Number(match[2]), day: Number(match[3]) }
+  const result = { year: Number(match[1]), month: Number(match[2]), day: Number(match[3]) }
+  const checked = new Date(Date.UTC(result.year, result.month - 1, result.day))
+  if (checked.getUTCFullYear() !== result.year || checked.getUTCMonth() !== result.month - 1 || checked.getUTCDate() !== result.day) {
+    throw new Error('请先在设置中填写正确的第一周日期')
+  }
+  return result
 }
 
 function timeParts(value, label) {
@@ -138,6 +143,7 @@ function generateCalendar(courses, table, periods, options) {
     'VERSION:2.0',
     'CALSCALE:GREGORIAN',
     'METHOD:PUBLISH',
+    'X-WR-TIMEZONE:Asia/Shanghai',
     `X-WR-CALNAME:${escapeText((table && table.name) || '课程表')}`,
     ...events,
     'END:VCALENDAR'
@@ -155,7 +161,8 @@ async function writeAndOpenCalendar(content, fileName) {
   }
   const safeName = String(fileName || '课程表').replace(/[\\/:*?"<>|]/g, '-').slice(0, 60) || '课程表'
   const filePath = `${wx.env.USER_DATA_PATH}/${safeName}.ics`
-  await callWx(wx.getFileSystemManager().writeFile.bind(wx.getFileSystemManager()), { filePath, data: content, encoding: 'utf8' })
+  const fileSystem = wx.getFileSystemManager()
+  await callWx(fileSystem.writeFile.bind(fileSystem), { filePath, data: content, encoding: 'utf8' })
   try {
     await callWx(wx.openDocument, { filePath, showMenu: true })
     return { filePath, opened: true }

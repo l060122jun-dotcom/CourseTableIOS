@@ -3,7 +3,7 @@
     <view class="section-title">当前课程表</view>
     <view class="form-row"><text class="form-label">课程表名称</text><input value="{{tableName}}" placeholder="例如：大三上" bindinput="tableField" data-key="tableName" /></view>
     <view class="form-row"><text class="form-label">总周数</text><input type="number" value="{{totalWeeks}}" bindinput="tableField" data-key="totalWeeks" /></view>
-    <picker mode="date" value="{{semesterStart}}" bindchange="semesterStartChange"><view class="form-row"><text class="form-label">第一周日期</text><text>{{semesterStart}}</text></view></picker>
+    <picker mode="date" value="{{semesterStart}}" bindchange="semesterStartChange"><view class="form-row"><text class="form-label">第一周周一</text><text>{{semesterStart}}</text></view></picker>
     <button class="button-primary save-table" bindtap="saveTable">保存课程表设置</button>
   </view>
   <view class="card">
@@ -12,6 +12,6 @@
     <block wx:for="{{periods}}" wx:key="index"><view class="period-row"><text class="period-number">第 {{item.index}} 节</text><picker mode="time" value="{{item.start}}" bindchange="periodTimeChange" data-index="{{index}}" data-key="start"><text>{{item.start}}</text></picker><text>至</text><picker mode="time" value="{{item.end}}" bindchange="periodTimeChange" data-index="{{index}}" data-key="end"><text>{{item.end}}</text></picker></view></block>
     <button class="button-plain preset" bindtap="restorePreset">恢复参考图默认时间</button><button class="button-primary save-periods" bindtap="savePeriods">保存时间设置</button><view class="muted">常规课程按这里的节次时间计算，不规则课程仍可单独填写时间。</view>
   </view>
-  <view class="card"><view class="section-title">提醒</view><view class="row">Apple 日历 <text>小程序暂不支持</text></view><button class="button-plain subscribe" bindtap="subscribe">订阅课程提醒</button><view class="muted result" wx:if="{{reminderMessage}}">{{reminderMessage}}</view><view class="row">课程提醒发送 <text>需服务端配置</text></view></view>
+  <view class="card"><view class="section-title">提醒</view><view class="row">静默写入日历 <text>小程序不支持</text></view><button class="button-plain subscribe" bindtap="subscribe">订阅课程提醒</button><view class="muted result" wx:if="{{reminderMessage}}">{{reminderMessage}}</view><view class="row">课程提醒发送 <text>需服务端配置</text></view></view>
   <view class="card"><view class="section-title">系统日历</view><button class="button-primary export-calendar" bindtap="exportCalendar">导出整学期日历</button><view class="muted">生成标准 ICS 文件；打开文件后仍需由你在系统日历界面确认导入，不会静默写入日历。</view></view>
 </view>
