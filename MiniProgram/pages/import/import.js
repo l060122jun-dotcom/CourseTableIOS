@@ -1,24 +1,7 @@
 const ocrAdapter = require('../../utils/ocr-adapter')
 const store = require('../../utils/store')
 const { assignCourseColors } = require('../../utils/course-color')
-
-function normalizeCourse(course, index) {
-  const hasCustomTime = course.customStart && course.customEnd && course.startPeriod == null && course.endPeriod == null
-  const timingMode = course.timingMode === 'custom' || hasCustomTime ? 'custom' : 'period'
-  const normalized = {
-    ...course,
-    id: course.id || 'ocr-' + Date.now() + '-' + index,
-    weekday: Number(course.weekday) || 1,
-    startPeriod: timingMode === 'period' ? (Number(course.startPeriod) || 1) : null,
-    endPeriod: timingMode === 'period' ? (Number(course.endPeriod) || Number(course.startPeriod) || 1) : null,
-    timingMode,
-    weeks: Array.isArray(course.weeks) ? course.weeks.map(Number).filter(Number.isFinite) : course.weeks,
-    startWeek: course.startWeek == null ? course.startWeek : Number(course.startWeek),
-    endWeek: course.endWeek == null ? course.endWeek : Number(course.endWeek)
-  }
-  normalized.spanHeight = course.spanHeight || ((normalized.endPeriod || normalized.startPeriod || 1) - (normalized.startPeriod || 1) + 1) * 190 - 8
-  return normalized
-}
+const { normalizeCourse } = require('../../utils/course-normalizer')
 
 Page({
   data: { message: '', healthMessage: '', draft: null, previewCourses: [], visibleCourses: [], currentWeek: 1, currentWeekIndex: 0, totalWeeks: 18, weekOptions: [], touchStartX: 0, touchStartY: 0, transitionClass: '', periods: [], days: ['一', '二', '三', '四', '五', '六', '日'] },
@@ -86,5 +69,6 @@ Page({
     wx.showToast({ title: '已导入课表', icon: 'success' })
     setTimeout(() => wx.switchTab({ url: '/pages/index/index' }), 500)
   },
+  createCourse() { wx.navigateTo({ url: '/pages/editor/editor' }) },
   backToChoose() { this.setData({ draft: null, previewCourses: [], visibleCourses: [], message: '' }) }
 })

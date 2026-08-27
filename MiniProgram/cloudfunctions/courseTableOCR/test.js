@@ -34,6 +34,18 @@ const parsed = _test.parseDraft('{"courses":[{"name":"高等数学"}],"warning":
 assert.equal(parsed.courses.length, 1)
 assert.equal(parsed.courses[0].name, '高等数学')
 
+const aliasedRoot = _test.parseDraft('识别结果：```json\n{"courseList":[{"courseName":"网页设计","weekDay":"周四","section":"第5-6节","weekRange":"[1-16周]"}]}\n```')
+assert.equal(aliasedRoot.courses.length, 1)
+assert.equal(aliasedRoot.courses[0].courseName, '网页设计')
+
+const arrayRoot = _test.parseDraft('[{"title":"大学英语","day":"Monday","start":1,"end":2}]')
+assert.equal(arrayRoot.courses.length, 1)
+assert.equal(arrayRoot.courses[0].title, '大学英语')
+
+const emptyStructured = _test.parseDraft('{"courses":[],"text":"高等数学 周一 第1-2节"}')
+assert.deepEqual(emptyStructured.courses, [])
+assert.match(emptyStructured.warning, /不能直接导入/)
+
 const fallback = _test.parseDraft('识别到高等数学，但模型没有返回 JSON。')
 assert.deepEqual(fallback.courses, [])
 assert.match(fallback.warning, /不是结构化 JSON/)

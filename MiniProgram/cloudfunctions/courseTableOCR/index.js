@@ -3,7 +3,7 @@ const https = require('https')
 
 cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV })
 
-const FUNCTION_VERSION = '2026.08.27-fast-v4'
+const FUNCTION_VERSION = '2026.08.27-normalize-v5'
 const ARK_HOSTNAME = 'ark.cn-beijing.volces.com'
 const ARK_PATH = '/api/v3/chat/completions'
 const CONNECT_TIMEOUT_MS = 5000
@@ -216,17 +216,55 @@ function contentText(response) {
   return ''
 }
 
-function parseDraft(content) {
+function jsonCandidate(content) {
   const stripped = String(content).replace(/^```json\s*/i, '').replace(/```\s*$/i, '').trim()
   const firstBrace = stripped.indexOf('{')
-  const lastBrace = stripped.lastIndexOf('}')
-  const candidate = firstBrace >= 0 && lastBrace > firstBrace ? stripped.slice(firstBrace, lastBrace + 1) : stripped
+  const firstBracket = stripped.indexOf('[')
+  let start = firstBrace
+  let closing = '}'
+  if (firstBracket >= 0 && (firstBrace < 0 || firstBracket < firstBrace)) {
+    start = firstBracket
+    closing = ']'
+  }
+  const end = stripped.lastIndexOf(closing)
+  return start >= 0 && end > start ? stripped.slice(start, end + 1) : stripped
+}
+
+function arrayFromContainer(value) {
+  if (Array.isArray(value)) return value
+  if (!value || typeof value !== 'object') return []
+  if (value.name || value.courseName || value.title || value['课程名']) return [value]
+  return Object.keys(value).reduce((items, key) => {
+    const entry = value[key]
+    if (Array.isArray(entry)) return items.concat(entry)
+    if (entry && typeof entry === 'object') items.push(entry)
+    return items
+  }, [])
+}
+
+function parsedCourses(parsed) {
+  if (Array.isArray(parsed)) return parsed
+  if (!parsed || typeof parsed !== 'object') return []
+  const containers = [
+    parsed.courses, parsed.course, parsed.courseList, parsed.course_list, parsed.schedule, parsed.items,
+    parsed.data && parsed.data.courses, parsed.data && parsed.data.courseList, parsed.data && parsed.data.items, Array.isArray(parsed.data) ? parsed.data : undefined,
+    parsed.result && parsed.result.courses, parsed.result && parsed.result.courseList, Array.isArray(parsed.result) ? parsed.result : undefined
+  ]
+  for (let index = 0; index < containers.length; index += 1) {
+    const courses = arrayFromContainer(containers[index])
+    if (courses.length) return courses
+  }
+  return []
+}
+
+function parseDraft(content) {
   try {
-    const parsed = JSON.parse(candidate)
+    const parsed = JSON.parse(jsonCandidate(content))
+    const courses = parsedCourses(parsed)
     return {
       text: content,
-      warning: parsed.warning || '请确认识别出的课程和周次',
-      courses: Array.isArray(parsed.courses) ? parsed.courses : []
+      warning: parsed.warning || (courses.length ? '请确认识别出的课程和周次' : '识别结果没有结构化课程，不能直接导入；请查看原文后重试或手动新建。'),
+      courses
     }
   } catch (error) {
     // Minimal fallback: keep the model output visible for manual confirmation
@@ -322,6 +360,8 @@ exports.main = async (event, context) => {
 exports._test = {
   detectImageMime,
   parseDraft,
+  parsedCourses,
+  jsonCandidate,
   contentText,
   buildArkRequestBody,
   arkConfigurationHint,
