@@ -1,80 +1,38 @@
 const cloud = require('wx-server-sdk')
-const tencentcloud = require('tencentcloud-sdk-nodejs-ocr')
+const https = require('https')
 
-cloud.init({
-  env: cloud.DYNAMIC_CURRENT_ENV
-})
+cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV })
 
-const OcrClient = tencentcloud.ocr.v20181119.Client
-
-function center(item) {
-  const points = item.Polygon || item.ItemPolygon || []
-  if (!points.length) return { x: 0, y: 0 }
-  return { x: points.reduce((sum, point) => sum + point.X, 0) / points.length, y: points.reduce((sum, point) => sum + point.Y, 0) / points.length }
-}
-
-function parseCourses(detections) {
-  const items = (detections || []).map(item => ({ text: String(item.DetectedText || '').trim(), ...center(item) })).filter(item => item.text)
-  const weekdayMap = { '一': 1, '二': 2, '三': 3, '四': 4, '五': 5, '六': 6, '日': 7, '天': 7 }
-  const weekdays = items.filter(item => /^星期[一二三四五六日天]$/.test(item.text)).map(item => ({ ...item, weekday: weekdayMap[item.text.slice(2)] }))
-  const periods = items.map(item => { const match = item.text.match(/^第(\d+)(?:[-－](\d+))?节$/); return match ? { ...item, startPeriod: Number(match[1]), endPeriod: Number(match[2] || match[1]) } : null }).filter(Boolean)
-  const ignored = /^(星期[一二三四五六日天]|第\d+(?:[-－]\d+)?节|\[?\d+(?:[-－]\d+)?\]?$|\[?\d+-\d+周\]?|午休|晚休)$/
-  return periods.map((period, index) => {
-    const weekday = weekdays.length ? weekdays.reduce((best, day) => Math.abs(day.x - period.x) < Math.abs(best.x - period.x) ? day : best, weekdays[0]).weekday : ((index % 7) + 1)
-    const nearby = items.filter(item => item !== period && item.y < period.y && item.y > period.y - 260 && Math.abs(item.x - period.x) < 220 && !ignored.test(item.text) && !/^\[.*\]$/.test(item.text)).sort((a, b) => a.y - b.y)
-    if (!nearby.length) return null
-    const nameItem = nearby.find(item => !/课表|学期|学生|课程表|第一学期|第二学期|^20\d{2}[-－]?\d{0,4}/.test(item.text) && !/^20\d{2}/.test(item.text) && !/^\d{2,4}(?:[-－]\d{1,4})?$/.test(item.text))
-    if (!nameItem) return null
-    const name = nameItem.text
-    const location = (nearby.find(item => /楼|室|教室|场|馆/.test(item.text)) || {}).text || ''
-    return { id: `ocr-${Date.now()}-${index}`, name, weekday, startPeriod: period.startPeriod, endPeriod: period.endPeriod, spanHeight: (period.endPeriod - period.startPeriod + 1) * 205 - 8, location, weeks: [] }
-  }).filter(Boolean)
+function arkRequest(apiKey, endpointId, imageBase64) {
+  const body = JSON.stringify({
+    model: endpointId,
+    temperature: 0,
+    max_tokens: 4096,
+    messages: [{ role: 'user', content: [
+      { type: 'text', text: '请读取这张课程表图片，严格只输出 JSON，不要 Markdown。按视觉上的星期列和节次行识别每门课程。格式：{"courses":[{"name":"课程名","weekday":1,"startPeriod":1,"endPeriod":2,"teacher":"教师","location":"教室","weeks":[1,2,3]}] ,"warning":""}。weekday 为 1-7，weeks 只填写图片明确出现的周次；无法确定时使用空数组。不要把图片标题、学期名称、星期标题或节次标题当作课程。' },
+      { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${imageBase64}` } }
+    ] }]
+  })
+  return new Promise((resolve, reject) => {
+    const request = https.request({ hostname: 'ark.cn-beijing.volces.com', path: '/api/v3/chat/completions', method: 'POST', headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) } }, response => {
+      let output = ''; response.on('data', chunk => { output += chunk }); response.on('end', () => { try { const data = JSON.parse(output); if (data.error) return reject(new Error(data.error.message || '火山方舟调用失败')); resolve(data) } catch (error) { reject(new Error('火山方舟返回了无法解析的结果')) } })
+    })
+    request.on('error', reject); request.write(body); request.end()
+  })
 }
 
 exports.main = async (event) => {
   try {
-    if (!event.fileID) {
-      return {
-        error: '没有收到图片 fileID'
-      }
-    }
-
-    const file = await cloud.downloadFile({
-      fileID: event.fileID
-    })
-
-    const client = new OcrClient({
-      credential: {
-        secretId: process.env.TENCENT_SECRET_ID,
-        secretKey: process.env.TENCENT_SECRET_KEY
-      },
-      region: 'ap-beijing',
-      profile: {
-        httpProfile: {
-          endpoint: 'ocr.tencentcloudapi.com'
-        }
-      }
-    })
-
-    const result = await client.GeneralAccurateOCR({
-      ImageBase64: file.fileContent.toString('base64')
-    })
-
-    const detections = result.TextDetections || []
-    const text = detections
-      .map(item => item.DetectedText)
-      .join('\n')
-
-    return {
-      draft: {
-        text,
-        warning: '请确认课程名称、星期和节次',
-        courses: parseCourses(detections)
-      }
-    }
+    if (!event.fileID) return { error: '没有收到图片 fileID' }
+    if (!process.env.ARK_API_KEY || !process.env.ARK_ENDPOINT_ID) return { error: '未配置 ARK_API_KEY 或 ARK_ENDPOINT_ID' }
+    const file = await cloud.downloadFile({ fileID: event.fileID })
+    const response = await arkRequest(process.env.ARK_API_KEY, process.env.ARK_ENDPOINT_ID, file.fileContent.toString('base64'))
+    const content = response.choices && response.choices[0] && response.choices[0].message && response.choices[0].message.content
+    if (!content) return { error: '火山方舟没有返回识别内容' }
+    const jsonText = String(content).replace(/^```json\s*/i, '').replace(/```\s*$/i, '').trim()
+    const draft = JSON.parse(jsonText)
+    return { draft: { text: content, warning: draft.warning || '请确认识别出的课程和周次', courses: Array.isArray(draft.courses) ? draft.courses : [] } }
   } catch (error) {
-    return {
-      error: error.message || 'OCR 识别失败'
-    }
+    return { error: error.message || '课程表识别失败' }
   }
 }
