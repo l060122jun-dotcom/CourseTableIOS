@@ -39,7 +39,7 @@
 
    再打开“导入”页选择图片；客户端会先压缩并限制到 2 MB，云函数日志会依次出现 `download.start`、`download.end`、`image.ready`、`ark.request.start`、`ark.connection.ready`、`ark.response.headers` 和 `complete`。失败日志只包含阶段、耗时、大小和错误码，不包含 API Key。
 
-   当前源码版本为 `2026.08.27-normalize-v5`。该版本兼容 `courses/courseList/schedule` 容器，以及 `weekday/day/weekDay`、`startPeriod/section/start/end` 等常见字段，并把 `[1-16周]`、`第1-2节` 等网页课表文本规范为数字。同步云函数受约 30 秒的平台边界限制，因此不能把等待时间直接改成 60 秒：当前安全预算是下载 5 秒加方舟请求 21 秒，总计约 26 秒，健康检查的 `syncBudgetMs` 会返回 `26000`。如果健康检查仍返回旧版本，说明云函数没有重新部署，需再次右键该目录执行“上传并部署：云端安装依赖”。如果导入仍失败，按最后一个日志阶段判断：
+   当前源码版本为 `2026.08.27-json-recovery-v6`。该版本兼容 `courses/courseList/schedule` 容器，以及 `weekday/day/weekDay`、`startPeriod/section/start/end` 等常见字段，并把 `[1-16周]`、`第1-2节` 等网页课表文本规范为数字；还会清理 BOM/零宽字符、解析前后说明和代码围栏，并在模型 JSON 被截断时恢复 `courses` 数组中已经闭合的完整课程。确认页的 `parseDiagnostics.status` 会显示 `parsed/recovered/empty/invalid`，不会再把解析失败表现成静默空白。同步云函数受约 30 秒的平台边界限制，因此不能把等待时间直接改成 60 秒：当前安全预算是下载 5 秒加方舟请求 21 秒，总计约 26 秒，健康检查的 `syncBudgetMs` 会返回 `26000`。如果健康检查仍返回旧版本，说明云函数没有重新部署，需再次右键该目录执行“上传并部署：云端安装依赖”。如果导入仍失败，按最后一个日志阶段判断：
 
    - `DOWNLOAD_TIMEOUT`：云存储下载或 fileID 权限问题；
    - `ARK_CONNECT_TIMEOUT`：云函数到火山方舟的 DNS/TLS/出网问题；

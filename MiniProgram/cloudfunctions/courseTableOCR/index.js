@@ -3,7 +3,7 @@ const https = require('https')
 
 cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV })
 
-const FUNCTION_VERSION = '2026.08.27-normalize-v5'
+const FUNCTION_VERSION = '2026.08.27-json-recovery-v6'
 const ARK_HOSTNAME = 'ark.cn-beijing.volces.com'
 const ARK_PATH = '/api/v3/chat/completions'
 const CONNECT_TIMEOUT_MS = 5000
@@ -216,18 +216,104 @@ function contentText(response) {
   return ''
 }
 
-function jsonCandidate(content) {
-  const stripped = String(content).replace(/^```json\s*/i, '').replace(/```\s*$/i, '').trim()
-  const firstBrace = stripped.indexOf('{')
-  const firstBracket = stripped.indexOf('[')
-  let start = firstBrace
-  let closing = '}'
-  if (firstBracket >= 0 && (firstBrace < 0 || firstBracket < firstBrace)) {
-    start = firstBracket
-    closing = ']'
+function cleanModelText(content) {
+  return String(content == null ? '' : content)
+    .replace(/[\uFEFF\u200B\u200C\u200D\u2060]/g, '')
+    .trim()
+}
+
+function normalizedJsonPunctuation(content) {
+  return content.replace(/[“”]/g, '"').replace(/：/g, ':').replace(/，/g, ',')
+}
+
+function balancedSegments(content, opener) {
+  const closer = opener === '{' ? '}' : ']'
+  const segments = []
+  let depth = 0
+  let start = -1
+  let inString = false
+  let escaped = false
+  for (let index = 0; index < content.length; index += 1) {
+    const character = content[index]
+    if (inString) {
+      if (escaped) escaped = false
+      else if (character === '\\') escaped = true
+      else if (character === '"') inString = false
+      continue
+    }
+    if (character === '"') {
+      inString = true
+      continue
+    }
+    if (character === opener) {
+      if (depth === 0) start = index
+      depth += 1
+    } else if (character === closer && depth > 0) {
+      depth -= 1
+      if (depth === 0 && start >= 0) {
+        segments.push(content.slice(start, index + 1))
+        start = -1
+      }
+    }
   }
-  const end = stripped.lastIndexOf(closing)
-  return start >= 0 && end > start ? stripped.slice(start, end + 1) : stripped
+  return segments
+}
+
+function repairJsonCandidate(candidate) {
+  let inString = false
+  let escaped = false
+  let repaired = ''
+  for (let index = 0; index < candidate.length; index += 1) {
+    const character = candidate[index]
+    if (inString && (character === '\n' || character === '\r' || character === '\t')) {
+      repaired += character === '\t' ? '\\t' : '\\n'
+      continue
+    }
+    repaired += character
+    if (escaped) escaped = false
+    else if (character === '\\' && inString) escaped = true
+    else if (character === '"') inString = !inString
+  }
+  return repaired.replace(/,\s*([}\]])/g, '$1')
+}
+
+function tryParseJson(candidate) {
+  const attempts = [candidate, repairJsonCandidate(candidate)]
+  for (let index = 0; index < attempts.length; index += 1) {
+    try {
+      let parsed = JSON.parse(attempts[index])
+      if (typeof parsed === 'string' && /^[\[{]/.test(parsed.trim())) parsed = JSON.parse(repairJsonCandidate(parsed.trim()))
+      return parsed
+    } catch (_) {
+      // Continue through conservative repairs; never invent coordinates or fields.
+    }
+  }
+  return undefined
+}
+
+function candidateTexts(content) {
+  const cleaned = cleanModelText(content)
+  const normalized = normalizedJsonPunctuation(cleaned)
+  const candidates = [cleaned]
+  const fencePattern = /```(?:json)?\s*([\s\S]*?)```/gi
+  let fence
+  while ((fence = fencePattern.exec(cleaned))) candidates.push(fence[1].trim())
+  if (normalized !== cleaned) candidates.push(normalized)
+  ;[cleaned, normalized].forEach(text => {
+    candidates.push(...balancedSegments(text, '{'), ...balancedSegments(text, '['))
+  })
+  const seen = new Set()
+  return candidates.filter(candidate => {
+    const value = candidate.trim()
+    if (!value || seen.has(value)) return false
+    seen.add(value)
+    return true
+  })
+}
+
+function jsonCandidate(content) {
+  const candidates = candidateTexts(content)
+  return candidates.find(candidate => tryParseJson(candidate) !== undefined) || cleanModelText(content)
 }
 
 function arrayFromContainer(value) {
@@ -257,22 +343,60 @@ function parsedCourses(parsed) {
   return []
 }
 
-function parseDraft(content) {
-  try {
-    const parsed = JSON.parse(jsonCandidate(content))
+function recoveredCourseObjects(content) {
+  const text = normalizedJsonPunctuation(cleanModelText(content))
+  const key = /["']?courses["']?\s*:\s*\[/ig
+  const match = key.exec(text)
+  if (!match) return []
+  const arrayText = text.slice(match.index + match[0].length)
+  return balancedSegments(arrayText, '{').reduce((courses, candidate) => {
+    const parsed = tryParseJson(candidate)
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) courses.push(parsed)
+    return courses
+  }, [])
+}
+
+function parseModelPayload(content) {
+  const cleaned = cleanModelText(content)
+  const candidates = candidateTexts(cleaned)
+  let firstParsed
+  for (let index = 0; index < candidates.length; index += 1) {
+    const parsed = tryParseJson(candidates[index])
+    if (parsed === undefined) continue
+    if (firstParsed === undefined) firstParsed = parsed
     const courses = parsedCourses(parsed)
-    return {
-      text: content,
-      warning: parsed.warning || (courses.length ? '请确认识别出的课程和周次' : '识别结果没有结构化课程，不能直接导入；请查看原文后重试或手动新建。'),
-      courses
+    if (courses.length) {
+      const candidateTrimmed = candidates[index].trim()
+      const whole = candidateTrimmed === cleaned || /^```(?:json)?[\s\S]*```$/i.test(cleaned)
+      return { parsed, courses, recovered: !whole }
     }
-  } catch (error) {
-    // Minimal fallback: keep the model output visible for manual confirmation
-    // instead of turning a usable OCR response into another timeout/error.
-    return {
-      text: content,
-      warning: '模型返回的内容不是结构化 JSON，请根据识别文本手动确认课程。',
-      courses: []
+  }
+  const courses = recoveredCourseObjects(cleaned)
+  if (courses.length) return { parsed: firstParsed, courses, recovered: true }
+  return { parsed: firstParsed, courses: [], recovered: false }
+}
+
+function parseDraft(content) {
+  const cleaned = cleanModelText(content)
+  const payload = parseModelPayload(cleaned)
+  const hasCoursesKey = /["'“”]?courses["'“”]?\s*[:：]/i.test(cleaned)
+  const likelyTruncated = hasCoursesKey && !/[}\]]\s*(?:```)?\s*$/.test(cleaned)
+  const status = payload.courses.length ? (payload.recovered ? 'recovered' : 'parsed') : (payload.parsed === undefined ? 'invalid' : 'empty')
+  let warning = payload.parsed && payload.parsed.warning
+  if (!warning && status === 'parsed') warning = '请确认识别出的课程和周次'
+  if (!warning && status === 'recovered') warning = `模型 JSON 可能被截断或带有异常包裹，已恢复 ${payload.courses.length} 门完整课程；请重点核对最后一门。`
+  if (!warning && status === 'empty') warning = 'JSON 可以解析，但 courses 为空；不能直接导入，请查看原文后重试或手动新建。'
+  if (!warning && status === 'invalid') warning = `JSON 解析失败${likelyTruncated ? '，模型输出疑似被截断' : ''}；已保留 ${cleaned.length} 个字符的原文，请重试或手动新建。`
+  return {
+    text: content,
+    warning,
+    courses: payload.courses,
+    parseDiagnostics: {
+      status,
+      contentChars: cleaned.length,
+      hasCoursesKey,
+      likelyTruncated,
+      recoveredCourseCount: payload.recovered ? payload.courses.length : 0
     }
   }
 }
@@ -362,6 +486,8 @@ exports._test = {
   parseDraft,
   parsedCourses,
   jsonCandidate,
+  parseModelPayload,
+  recoveredCourseObjects,
   contentText,
   buildArkRequestBody,
   arkConfigurationHint,
