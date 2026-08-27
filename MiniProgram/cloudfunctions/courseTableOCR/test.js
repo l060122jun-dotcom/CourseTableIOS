@@ -9,7 +9,7 @@ assert.equal(_test.constants.MAX_IMAGE_BYTES, 2 * 1024 * 1024)
 const requestBody = JSON.parse(_test.buildArkRequestBody('endpoint-test', 'data:image/png;base64,AA=='))
 assert.deepEqual(requestBody.thinking, { type: 'disabled' })
 assert.equal(requestBody.thinking_type, undefined)
-assert.equal(requestBody.max_tokens, 8192)
+assert.equal(requestBody.max_tokens, 4096)
 assert.equal(requestBody.model, 'endpoint-test')
 assert.equal(requestBody.messages[0].content[1].image_url.url, 'data:image/png;base64,AA==')
 
