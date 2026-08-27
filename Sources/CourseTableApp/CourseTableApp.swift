@@ -1,7 +1,9 @@
+import Foundation
 import SwiftUI
 import CourseTableCore
 import PhotosUI
 import UIKit
+import UniformTypeIdentifiers
 
 @main
 struct CourseTableApp: App {
@@ -194,10 +196,15 @@ private struct ImportView: View {
     @State private var isScanning = false
     @State private var draft: OCRImportDraft?
     @State private var errorMessage: String?
+    @State private var showFileImporter = false
     var body: some View {
         List {
             PhotosPicker(selection: $selectedItem, matching: .images) { Label("从相册选择图片", systemImage: "photo") }
                 .onChange(of: selectedItem) { _, item in scan(item) }
+            Button { showFileImporter = true } label: { Label("选择本地图片或表格文件", systemImage: "doc.badge.plus") }
+                .fileImporter(isPresented: $showFileImporter, allowedContentTypes: [.image, .commaSeparatedText, .tabSeparatedText, .plainText, .data], allowsMultipleSelection: false) { result in
+                    switch result { case .success(let urls): importFile(urls[0]); case .failure(let error): errorMessage = "选择文件失败：\(error.localizedDescription)" }
+                }
             Label("拍照导入课程表", systemImage: "camera").foregroundStyle(.secondary)
             if isScanning { ProgressView("正在识别课程与时间…") }
             if let draft {
@@ -218,6 +225,21 @@ private struct ImportView: View {
             catch { errorMessage = "识别失败：\(error.localizedDescription)" }
             isScanning = false
         }
+    }
+    private func importFile(_ url: URL) {
+        guard url.startAccessingSecurityScopedResource() else { errorMessage = "无法访问所选文件"; return }
+        defer { url.stopAccessingSecurityScopedResource() }
+        do {
+            let data = try Data(contentsOf: url)
+            if let image = UIImage(data: data) { scanImage(image); return }
+            let text = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .utf16) ?? ""
+            guard !text.isEmpty else { errorMessage = "表格文件暂未识别到可读文本，请导出为 CSV/TSV 后重试。"; return }
+            draft = OCRImportDraft(sourceImageHash: "file:\(url.lastPathComponent)", rawRecognizedText: text, warnings: ["表格已读取为导入草稿，请确认课程、星期、周次和时间后保存。"])
+        } catch { errorMessage = "读取文件失败：\(error.localizedDescription)" }
+    }
+    private func scanImage(_ image: UIImage) {
+        isScanning = true; errorMessage = nil
+        Task { do { draft = try await OCRService().recognize(image: image) }; catch { errorMessage = "识别失败：\(error.localizedDescription)" }; isScanning = false }
     }
 }
 
