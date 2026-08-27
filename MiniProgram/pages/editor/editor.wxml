@@ -14,6 +14,6 @@
     </block>
     <block wx:else><view class="form-row"><text class="form-label">开始时间</text><picker mode="time" value="{{customStart}}" bindchange="timeChange" data-key="customStart">{{customStart}}</picker></view><view class="form-row"><text class="form-label">结束时间</text><picker mode="time" value="{{customEnd}}" bindchange="timeChange" data-key="customEnd">{{customEnd}}</picker></view></block>
   </view>
-  <view class="card"><view class="section-title">重复周次</view><view class="muted">第 {{startWeek}}–{{endWeek}} 周 · 提前 {{reminderMinutes}} 分钟提醒</view></view>
+  <view class="card"><view class="section-title">重复周次</view><checkbox-group bindchange="weeksChange"><view class="week-grid"><label wx:for="{{weekOptions}}" wx:key="value" class="week-item"><checkbox value="{{item.value}}" checked="{{item.checked}}" />{{item.label}}</label></view></checkbox-group><view class="muted">可多选不连续周次 · 提前 {{reminderMinutes}} 分钟提醒</view></view>
   <button class="button-primary save" bindtap="save">保存课程</button>
 </view>
