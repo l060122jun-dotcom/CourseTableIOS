@@ -84,7 +84,7 @@ jobs:
           APP=build/Build/Products/Debug-iphonesimulator/CourseTableApp.app
           test -n "$APP"
           python3 -c 'import subprocess,sys; subprocess.run(sys.argv[1:], timeout=90, check=True)' xcrun simctl install "$UDID" "$APP"
-          python3 -c 'import subprocess,sys; subprocess.run(sys.argv[1:], timeout=60, check=True)' xcrun simctl launch "$UDID" com.codex.coursetable.app
+          python3 -c 'import subprocess,sys; subprocess.run(sys.argv[1:], timeout=60, check=True)' xcrun simctl launch "$UDID" com.codex.coursetable.app --demo-data
           sleep 3
           mkdir -p artifacts
           python3 -c 'import subprocess,sys; subprocess.run(sys.argv[1:], timeout=60, check=True)' xcrun simctl io "$UDID" screenshot artifacts/course-table.png
