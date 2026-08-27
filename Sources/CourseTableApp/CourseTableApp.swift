@@ -239,7 +239,14 @@ private struct ImportView: View {
     }
     private func scanImage(_ image: UIImage) {
         isScanning = true; errorMessage = nil
-        Task { do { draft = try await OCRService().recognize(image: image) }; catch { errorMessage = "识别失败：\(error.localizedDescription)" }; isScanning = false }
+        Task {
+            do {
+                draft = try await OCRService().recognize(image: image)
+            } catch {
+                errorMessage = "识别失败：\(error.localizedDescription)"
+            }
+            isScanning = false
+        }
     }
 }
 
