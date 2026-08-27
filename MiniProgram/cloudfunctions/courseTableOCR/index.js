@@ -3,9 +3,11 @@ const https = require('https')
 
 cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV })
 
-const FUNCTION_VERSION = '2026.08.27-timeout-26s-v9'
+const FUNCTION_VERSION = '2026.08.27-deepseek-provider-v10'
 const ARK_HOSTNAME = 'ark.cn-beijing.volces.com'
 const ARK_PATH = '/api/v3/chat/completions'
+const DEEPSEEK_DEFAULT_BASE_URL = 'https://api.deepseek.com'
+const DEEPSEEK_DEFAULT_MODEL = 'deepseek-v4-flash-vision-exp'
 const CONNECT_TIMEOUT_MS = 5000
 const DOWNLOAD_TIMEOUT_MS = 5000
 const ARK_TIMEOUT_MS = 26000
@@ -16,6 +18,7 @@ const MAX_BASE64_CHARS = 3 * 1024 * 1024
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 const MAX_OUTPUT_TOKENS = 4096
 const THINKING_FIELDS = new Set(['thinking', 'thinking_type', 'none'])
+const OCR_PROMPT = '读取课程表图片。只输出紧凑单行 JSON，不要 Markdown、解释或换行。格式：{"courses":[{"name":"课程名","weekday":1,"startPeriod":1,"endPeriod":2,"teacher":"教师","location":"教室","weeks":[1,2,3]}],"warning":""}。weekday 为 1-7，weeks 只填图片明确出现的周次；无法确定用空数组。不要把标题、星期标题或节次标题当课程。'
 
 function requestId(context) {
   return (context && context.requestId) || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
@@ -58,6 +61,50 @@ function configuredThinkingField() {
   return THINKING_FIELDS.has(value) ? value : 'thinking'
 }
 
+function deepseekEndpoint(baseUrl) {
+  let endpoint
+  try {
+    endpoint = new URL(baseUrl || DEEPSEEK_DEFAULT_BASE_URL)
+  } catch (_) {
+    throw serviceError('DEEPSEEK_BASE_URL 不是有效的 HTTPS 地址', 'DEEPSEEK_INVALID_BASE_URL')
+  }
+  if (endpoint.protocol !== 'https:' || endpoint.username || endpoint.password || endpoint.search || endpoint.hash) {
+    throw serviceError('DEEPSEEK_BASE_URL 必须是无账号、查询参数或锚点的 HTTPS 地址', 'DEEPSEEK_INVALID_BASE_URL')
+  }
+  const basePath = endpoint.pathname.replace(/\/+$/, '')
+  const path = basePath.endsWith('/chat/completions') ? basePath : `${basePath}/chat/completions`
+  return { hostname: endpoint.hostname, port: endpoint.port ? Number(endpoint.port) : undefined, path: path || '/chat/completions' }
+}
+
+function providerSettings(environment = process.env) {
+  const provider = String(environment.AI_PROVIDER || 'ark').trim().toLowerCase()
+  if (provider === 'deepseek') {
+    const endpoint = deepseekEndpoint(environment.DEEPSEEK_BASE_URL || DEEPSEEK_DEFAULT_BASE_URL)
+    return {
+      provider,
+      label: 'DeepSeek',
+      apiKey: environment.DEEPSEEK_API_KEY || '',
+      model: environment.DEEPSEEK_MODEL || DEEPSEEK_DEFAULT_MODEL,
+      hostname: endpoint.hostname,
+      port: endpoint.port,
+      path: endpoint.path,
+      configured: Boolean(environment.DEEPSEEK_API_KEY),
+      officialBase: endpoint.hostname === 'api.deepseek.com'
+    }
+  }
+  if (provider !== 'ark') throw serviceError('AI_PROVIDER 仅支持 ark 或 deepseek', 'AI_PROVIDER_UNSUPPORTED')
+  return {
+    provider,
+    label: '火山方舟',
+    apiKey: environment.ARK_API_KEY || '',
+    model: environment.ARK_ENDPOINT_ID || '',
+    hostname: ARK_HOSTNAME,
+    path: ARK_PATH,
+    configured: Boolean(environment.ARK_API_KEY && environment.ARK_ENDPOINT_ID),
+    officialBase: true
+  }
+}
+
 function buildArkRequestBody(endpointId, imageDataURL, thinkingField = configuredThinkingField()) {
   const body = {
     model: endpointId,
@@ -69,7 +116,7 @@ function buildArkRequestBody(endpointId, imageDataURL, thinkingField = configure
       content: [
         {
           type: 'text',
-          text: '读取课程表图片。只输出紧凑单行 JSON，不要 Markdown、解释或换行。格式：{"courses":[{"name":"课程名","weekday":1,"startPeriod":1,"endPeriod":2,"teacher":"教师","location":"教室","weeks":[1,2,3]}],"warning":""}。weekday 为 1-7，weeks 只填图片明确出现的周次；无法确定用空数组。不要把标题、星期标题或节次标题当课程。'
+          text: OCR_PROMPT
         },
         { type: 'image_url', image_url: { url: imageDataURL } }
       ]
@@ -84,6 +131,24 @@ function buildArkRequestBody(endpointId, imageDataURL, thinkingField = configure
   return JSON.stringify(body)
 }
 
+function buildDeepSeekRequestBody(model, imageDataURL) {
+  return JSON.stringify({
+    model,
+    temperature: 0,
+    max_tokens: MAX_OUTPUT_TOKENS,
+    stream: false,
+    thinking: { type: 'disabled' },
+    response_format: { type: 'json_object' },
+    messages: [{
+      role: 'user',
+      content: [
+        { type: 'text', text: OCR_PROMPT },
+        { type: 'image_url', image_url: { url: imageDataURL } }
+      ]
+    }]
+  })
+}
+
 function arkConfigurationHint(statusCode, message, thinkingField) {
   if (statusCode !== 400) return ''
   const normalized = String(message || '').toLowerCase()
@@ -96,15 +161,29 @@ function arkConfigurationHint(statusCode, message, thinkingField) {
   return '请确认 ARK_ENDPOINT_ID 绑定支持图片输入的模型，并核对该端点支持的 Chat Completions 参数。'
 }
 
+function providerConfigurationHint(settings, statusCode, message, thinkingField) {
+  if (settings.provider === 'ark') return arkConfigurationHint(statusCode, message, thinkingField)
+  if (statusCode !== 400 && statusCode !== 404) return ''
+  const normalized = String(message || '').toLowerCase()
+  if (normalized.includes('image') || normalized.includes('vision') || normalized.includes('content') || normalized.includes('model') || settings.officialBase) {
+    return 'DeepSeek 官方 API 当前未公开支持图片 image_url；请确认 DEEPSEEK_MODEL 与 DEEPSEEK_BASE_URL 指向支持 OpenAI-compatible 视觉输入的实验端点，或切回 AI_PROVIDER=ark。'
+  }
+  return '请核对 DeepSeek 兼容端点的 Chat Completions 路径、模型名和 image_url data URL 支持情况。'
+}
+
 function effectiveArkTotalTimeout(syncDeadlineAt, now = Date.now()) {
   if (!Number.isFinite(syncDeadlineAt)) return TOTAL_TIMEOUT_MS
   return Math.max(1000, Math.min(TOTAL_TIMEOUT_MS, syncDeadlineAt - now))
 }
 
-function arkRequest(apiKey, endpointId, imageDataURL, diagnostics, syncDeadlineAt) {
+function providerRequest(settings, imageDataURL, diagnostics, syncDeadlineAt) {
   const thinkingField = configuredThinkingField()
-  const body = buildArkRequestBody(endpointId, imageDataURL, thinkingField)
+  const body = settings.provider === 'deepseek'
+    ? buildDeepSeekRequestBody(settings.model, imageDataURL)
+    : buildArkRequestBody(settings.model, imageDataURL, thinkingField)
   const effectiveTotalTimeoutMs = effectiveArkTotalTimeout(syncDeadlineAt)
+  const codePrefix = settings.provider.toUpperCase()
+  const stagePrefix = settings.provider
 
   return new Promise((resolve, reject) => {
     const startedAt = Date.now()
@@ -133,16 +212,18 @@ function arkRequest(apiKey, endpointId, imageDataURL, diagnostics, syncDeadlineA
     }
 
     const connectTimer = setTimeout(() => {
-      abort(serviceError('连接火山方舟超时，请稍后重试', 'ARK_CONNECT_TIMEOUT', { timeoutMs: CONNECT_TIMEOUT_MS }))
+      abort(serviceError(`连接${settings.label}超时，请稍后重试`, `${codePrefix}_CONNECT_TIMEOUT`, { timeoutMs: CONNECT_TIMEOUT_MS }))
     }, CONNECT_TIMEOUT_MS)
     const totalTimer = setTimeout(() => {
-      abort(serviceError(`火山方舟未能在本次剩余的 ${Math.round(effectiveTotalTimeoutMs / 1000)} 秒同步预算内完成，已提前终止以避免云函数 30 秒超时`, 'ARK_TOTAL_TIMEOUT', { timeoutMs: effectiveTotalTimeoutMs, configuredTimeoutMs: TOTAL_TIMEOUT_MS }))
+      abort(serviceError(`${settings.label}未能在本次剩余的 ${Math.round(effectiveTotalTimeoutMs / 1000)} 秒同步预算内完成，已提前终止以避免云函数 30 秒超时`, `${codePrefix}_TOTAL_TIMEOUT`, { timeoutMs: effectiveTotalTimeoutMs, configuredTimeoutMs: TOTAL_TIMEOUT_MS }))
     }, effectiveTotalTimeoutMs)
 
-    log('ark.request.start', Object.assign({}, diagnostics, {
+    log(`${stagePrefix}.request.start`, Object.assign({}, diagnostics, {
+      provider: settings.provider,
+      model: settings.model,
       requestBytes: Buffer.byteLength(body),
       maxOutputTokens: MAX_OUTPUT_TOKENS,
-      thinkingField,
+      thinkingField: settings.provider === 'ark' ? thinkingField : 'thinking',
       connectTimeoutMs: CONNECT_TIMEOUT_MS,
       responseTimeoutMs: ARK_TIMEOUT_MS,
       totalTimeoutMs: effectiveTotalTimeoutMs,
@@ -150,11 +231,12 @@ function arkRequest(apiKey, endpointId, imageDataURL, diagnostics, syncDeadlineA
     }))
 
     request = https.request({
-      hostname: ARK_HOSTNAME,
-      path: ARK_PATH,
+      hostname: settings.hostname,
+      port: settings.port,
+      path: settings.path,
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${apiKey}`,
+        Authorization: `Bearer ${settings.apiKey}`,
         'Content-Type': 'application/json',
         'Content-Length': Buffer.byteLength(body)
       }
@@ -162,17 +244,17 @@ function arkRequest(apiKey, endpointId, imageDataURL, diagnostics, syncDeadlineA
       clearTimeout(connectTimer)
       const chunks = []
       let responseBytes = 0
-      const arkLogId = response.headers['x-tt-logid'] || response.headers['x-request-id'] || ''
-      log('ark.response.headers', Object.assign({}, diagnostics, {
+      const providerRequestId = response.headers['x-tt-logid'] || response.headers['x-request-id'] || ''
+      log(`${stagePrefix}.response.headers`, Object.assign({}, diagnostics, {
         elapsedMs: Date.now() - startedAt,
         statusCode: response.statusCode,
-        arkLogId
+        providerRequestId
       }))
 
       response.on('data', chunk => {
         responseBytes += chunk.length
         if (responseBytes > MAX_RESPONSE_BYTES) {
-          response.destroy(serviceError('火山方舟返回内容过大', 'ARK_RESPONSE_TOO_LARGE'))
+          response.destroy(serviceError(`${settings.label}返回内容过大`, `${codePrefix}_RESPONSE_TOO_LARGE`))
           return
         }
         chunks.push(chunk)
@@ -180,22 +262,22 @@ function arkRequest(apiKey, endpointId, imageDataURL, diagnostics, syncDeadlineA
       response.on('error', fail)
       response.on('end', () => {
         const output = Buffer.concat(chunks).toString('utf8')
-        log('ark.response.end', Object.assign({}, diagnostics, {
+        log(`${stagePrefix}.response.end`, Object.assign({}, diagnostics, {
           elapsedMs: Date.now() - startedAt,
           statusCode: response.statusCode,
           responseBytes,
-          arkLogId
+          providerRequestId
         }))
         let data
         try {
           data = JSON.parse(output)
         } catch (error) {
-          return fail(serviceError('火山方舟返回了无法解析的结果', 'ARK_INVALID_RESPONSE', { statusCode: response.statusCode, arkLogId }))
+          return fail(serviceError(`${settings.label}返回了无法解析的结果`, `${codePrefix}_INVALID_RESPONSE`, { statusCode: response.statusCode, providerRequestId }))
         }
         if ((response.statusCode || 500) < 200 || (response.statusCode || 500) >= 300 || data.error) {
-          const message = data.error && data.error.message ? data.error.message : `火山方舟 HTTP ${response.statusCode}`
-          const hint = arkConfigurationHint(response.statusCode, message, thinkingField)
-          return fail(serviceError(message, 'ARK_HTTP_ERROR', { statusCode: response.statusCode, arkLogId, hint }))
+          const message = data.error && data.error.message ? data.error.message : `${settings.label} HTTP ${response.statusCode}`
+          const hint = providerConfigurationHint(settings, response.statusCode, message, thinkingField)
+          return fail(serviceError(message, `${codePrefix}_HTTP_ERROR`, { statusCode: response.statusCode, providerRequestId, hint }))
         }
         succeed(data)
       })
@@ -204,11 +286,11 @@ function arkRequest(apiKey, endpointId, imageDataURL, diagnostics, syncDeadlineA
     request.on('socket', socket => {
       socket.once('secureConnect', () => {
         clearTimeout(connectTimer)
-        log('ark.connection.ready', Object.assign({}, diagnostics, { elapsedMs: Date.now() - startedAt }))
+        log(`${stagePrefix}.connection.ready`, Object.assign({}, diagnostics, { elapsedMs: Date.now() - startedAt }))
       })
     })
     request.setTimeout(ARK_TIMEOUT_MS, () => {
-      request.destroy(serviceError('火山方舟 26 秒内没有完成响应，已主动终止', 'ARK_RESPONSE_TIMEOUT', { timeoutMs: ARK_TIMEOUT_MS }))
+      request.destroy(serviceError(`${settings.label} 26 秒内没有完成响应，已主动终止`, `${codePrefix}_RESPONSE_TIMEOUT`, { timeoutMs: ARK_TIMEOUT_MS }))
     })
     request.on('error', fail)
     request.write(body)
