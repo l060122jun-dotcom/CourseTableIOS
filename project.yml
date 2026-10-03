@@ -37,6 +37,9 @@ targets:
       path: Sources/CourseTableApp/Info.plist
       properties:
         CFBundleDisplayName: 流云课表
+        CFBundleName: 流云课表
+        CFBundleShortVersionString: "2.0.0"
+        CFBundleVersion: "2"
         UILaunchScreen: {}
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
