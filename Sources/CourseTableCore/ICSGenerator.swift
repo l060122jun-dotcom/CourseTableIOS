@@ -30,8 +30,8 @@ public enum ICSGenerator {
         for item in semantic {
             let times = item.times
             let dayOffset = (item.week - 1) * 7 + item.weekday - 1
-            let start = utcDate(base: table.semesterStartDate, dayOffset: dayOffset, minutes: times.start)
-            var end = utcDate(base: table.semesterStartDate, dayOffset: dayOffset, minutes: times.end)
+            let start = utcDate(base: table.semesterStartDate, dayOffset: dayOffset, minutes: times.startMinuteOfDay)
+            var end = utcDate(base: table.semesterStartDate, dayOffset: dayOffset, minutes: times.endMinuteOfDay)
             if end <= start { end = end.addingTimeInterval(24 * 60 * 60) }
 
             var lines2: [String] = [

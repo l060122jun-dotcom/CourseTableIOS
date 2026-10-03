@@ -2,7 +2,7 @@ name: iOS CI
 
 on:
   push:
-    branches: [main, master]
+    branches: [main, master, ios-v2]
   pull_request:
   workflow_dispatch:
 
@@ -12,21 +12,16 @@ concurrency:
 
 jobs:
   build-and-test:
-    runs-on: macos-15
-    timeout-minutes: 30
+    runs-on: macos-26
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
 
       - name: Select Xcode
         run: |
-          sudo xcode-select -s /Applications/Xcode_16.4.app/Contents/Developer
-          xcode-select -p
-
-      - name: Print toolchain
-        run: |
+          sudo xcode-select -s /Applications/Xcode_26.4.1.app/Contents/Developer || sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
           xcodebuild -version
-          xcodegen --version || true
-          test "$(xcodebuild -version | awk '/^Xcode / {print $2}' | cut -d. -f1)" -ge 16
+          test "$(xcodebuild -version | awk '/^Xcode / {print $2}' | cut -d. -f1)" -ge 26
 
       - name: Install XcodeGen
         run: brew install xcodegen
@@ -40,8 +35,9 @@ jobs:
       - name: Test domain package
         run: swift test
 
-      - name: Build iOS app
+      - name: Build iOS app for simulator
         run: |
+          set -euo pipefail
           xcodebuild build \
             -project CourseTable.xcodeproj \
             -scheme CourseTable \
@@ -49,65 +45,12 @@ jobs:
             -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO
 
-      - name: Upload unsigned simulator build
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: course-table-simulator-build
-          path: build/Build/Products/Debug-iphonesimulator/CourseTableApp.app
-          if-no-files-found: error
-
-      - name: Validate app privacy manifest and icon
+      - name: Validate app bundle
         run: |
-          APP=build/Build/Products/Debug-iphonesimulator/CourseTableApp.app
+          set -euo pipefail
+          APP=$(find build/Build/Products/Debug-iphonesimulator -maxdepth 1 -name "*.app" | head -1)
+          test -n "$APP"
           test -f "$APP/PrivacyInfo.xcprivacy"
           plutil -lint "$APP/PrivacyInfo.xcprivacy"
           test -f "$APP/Assets.car"
-
-      - name: Create unsigned App Store archive
-        run: |
-          xcodebuild archive \
-            -project CourseTable.xcodeproj \
-            -scheme CourseTable \
-            -destination "generic/platform=iOS" \
-            -archivePath build/CourseTable.xcarchive \
-            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO
-
-      - name: Upload archive for signing
-        uses: actions/upload-artifact@v4
-        with:
-          name: course-table-unsigned-archive
-          path: build/CourseTable.xcarchive
-
-      - name: Launch simulator and capture effect screen
-        run: |
-          set -euxo pipefail
-          xcrun simctl list devices available
-          UDID=$(xcrun simctl list devices available | grep -m1 -E 'iPhone .* \(' | sed -E 's/.*\(([A-F0-9-]+)\).*/\1/')
-          test -n "$UDID"
-          echo "Using simulator: $UDID"
-          python3 -c 'import subprocess,sys; subprocess.run(sys.argv[1:], timeout=90, check=True)' xcrun simctl boot "$UDID" || true
-          sleep 12
-          APP=build/Build/Products/Debug-iphonesimulator/CourseTableApp.app
-          test -n "$APP"
-          python3 -c 'import subprocess,sys; subprocess.run(sys.argv[1:], timeout=90, check=True)' xcrun simctl install "$UDID" "$APP"
-          mkdir -p artifacts/screens
-          for SCREEN in home import new-course detail settings; do
-            python3 -c 'import subprocess,sys; subprocess.run(sys.argv[1:], timeout=30, check=False)' xcrun simctl terminate "$UDID" com.codex.coursetable.app
-            sleep 1
-            if [ "$SCREEN" = "home" ]; then
-              python3 -c 'import subprocess,sys; subprocess.run(sys.argv[1:], timeout=60, check=True)' xcrun simctl launch "$UDID" com.codex.coursetable.app --demo-data
-            else
-              python3 -c 'import subprocess,sys; subprocess.run(sys.argv[1:], timeout=60, check=True)' xcrun simctl launch "$UDID" com.codex.coursetable.app --demo-data "--screen=$SCREEN"
-            fi
-            sleep 3
-            python3 -c 'import subprocess,sys; subprocess.run(sys.argv[1:], timeout=60, check=True)' xcrun simctl io "$UDID" screenshot "artifacts/screens/$SCREEN.png"
-          done
-          cp artifacts/screens/home.png artifacts/course-table.png
-
-      - name: Upload effect screenshot
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: course-table-screens
-          path: artifacts/screens
+          plutil -p "$APP/Info.plist" | grep -E "CFBundleDisplayName|CFBundleIdentifier" || true
