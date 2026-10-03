@@ -4,7 +4,7 @@ import PackageDescription
 let package = Package(
     name: "CourseTableCore",
     platforms: [
-        .iOS(.v17),
+        .iOS(.v26),
         .macOS(.v13)
     ],
     products: [

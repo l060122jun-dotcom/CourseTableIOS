@@ -5,5 +5,8 @@ build/
 xcuserdata/
 CourseTable.xcodeproj/
 node_modules/
+AndroidApp/
+*.ipa
+ipa-root/
 MiniProgram/config.local.js
 MiniProgram/project.config.json

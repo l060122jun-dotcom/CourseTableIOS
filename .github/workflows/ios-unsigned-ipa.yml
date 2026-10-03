@@ -1,0 +1,78 @@
+name: iOS Unsigned IPA
+
+on:
+  push:
+    branches: [main, ios-v2]
+    paths:
+      - "Sources/**"
+      - "Assets.xcassets/**"
+      - "project.yml"
+      - ".github/workflows/ios-unsigned-ipa.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: ios-unsigned-ipa-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-ipa:
+    runs-on: macos-26
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: |
+          sudo xcode-select -s /Applications/Xcode_26.4.1.app/Contents/Developer || sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+          xcodebuild -version
+          xcodebuild -showsdks | grep -i iphoneos || true
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate project
+        run: xcodegen generate
+
+      - name: Build device app (unsigned)
+        run: |
+          set -euo pipefail
+          xcodebuild build \
+            -project CourseTable.xcodeproj \
+            -scheme CourseTable \
+            -configuration Release \
+            -destination "generic/platform=iOS" \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGN_ENTITLEMENTS="" \
+            BUILD_LIBRARY_FOR_DISTRIBUTION=NO
+
+      - name: Package unsigned IPA
+        run: |
+          set -euo pipefail
+          APP=$(find build/Build/Products/Release-iphoneos -maxdepth 1 -name "*.app" | head -1)
+          echo "App bundle: $APP"
+          test -n "$APP"
+          mkdir -p ipa-root/Payload
+          cp -R "$APP" ipa-root/Payload/
+          # Strip any signature/codesign artifacts so the IPA is truly unsigned.
+          rm -rf ipa-root/Payload/*.app/_CodeSignature || true
+          rm -f ipa-root/Payload/*.app/embedded.mobileprovision || true
+          (cd ipa-root && zip -qry ../CourseTable-unsigned.ipa Payload)
+          ls -la CourseTable-unsigned.ipa
+          # Show bundle identity for verification.
+          plutil -p "$APP/Info.plist" | grep -E "CFBundleIdentifier|CFBundleDisplayName|CFBundleShortVersionString|MinimumOSVersion" || true
+
+      - name: Verify IPA structure
+        run: |
+          set -euo pipefail
+          unzip -l CourseTable-unsigned.ipa | grep -E "Payload/.*\.app/(CourseTableApp|Info.plist)" | head
+          unzip -l CourseTable-unsigned.ipa | grep -c "Payload/" || true
+
+      - name: Upload unsigned IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: liuyun-course-table-unsigned-ipa
+          path: CourseTable-unsigned.ipa
+          if-no-files-found: error

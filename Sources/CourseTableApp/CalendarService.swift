@@ -1,4 +1,5 @@
 import EventKit
+import Foundation
 import CourseTableCore
 
 enum CalendarServiceError: LocalizedError {
@@ -9,87 +10,176 @@ enum CalendarServiceError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .accessDenied:
-            return "没有日历写入权限。请在“设置 > 隐私与安全性 > 日历”中允许课程表写入。"
+            return "没有日历权限。请在“设置 > 隐私与安全性 > 日历”中允许流云课表访问。"
         case .noWritableCalendar:
-            return "没有可写入的 Apple 日历，请先在系统日历中创建或启用一个日历账户。"
+            return "没有可写入的系统日历，请先在系统日历中创建或启用一个账户。"
         case .invalidSemesterDate:
-            return "无法根据学期开始日期计算课程日期，请检查课程表设置。"
+            return "无法根据第一周日期计算课程日期，请检查课程表设置。"
         }
     }
 }
 
+/// Idempotent EventKit bridge. Creates one event per class occurrence,
+/// remembers the EventKit identifier so re-exports update instead of
+/// duplicating, and can remove only events this app created.
 @MainActor
-final class CalendarService: ObservableObject {
+final class CalendarService {
+    static let shared = CalendarService()
+
+    struct ExportSummary {
+        var created: Int
+        var updated: Int
+        var skipped: Int
+        var allRecords: [CalendarExportRecord]
+        var records: [CalendarExportRecord]
+    }
+
     private let store = EKEventStore()
-    @Published private(set) var authorization: EKAuthorizationStatus = .notDetermined
 
-    init() {
-        refreshAuthorization()
-    }
-
-    func refreshAuthorization() {
-        authorization = EKEventStore.authorizationStatus(for: .event)
-    }
-
-    func requestWriteAccess() async throws {
-        refreshAuthorization()
-        switch authorization {
-        case .writeOnly, .fullAccess, .authorized:
+    func requestAccess() async throws {
+        let status = EKEventStore.authorizationStatus(for: .event)
+        switch status {
+        case .fullAccess, .writeOnly, .authorized:
             return
         case .denied, .restricted:
             throw CalendarServiceError.accessDenied
         case .notDetermined:
-            let granted = try await store.requestWriteOnlyAccessToEvents()
-            refreshAuthorization()
+            let granted = try await store.requestFullAccessToEvents()
             guard granted else { throw CalendarServiceError.accessDenied }
         @unknown default:
             throw CalendarServiceError.accessDenied
         }
     }
 
-    /// Exports every selected semester week for one course rule. This is an
-    /// explicit user action and never runs automatically after OCR.
-    func exportCourse(
+    /// Writes every occurrence of the given rules, updating matches in place.
+    func export(
         course: Course,
-        rule: MeetingRule,
+        rules: [MeetingRule],
         table: CourseTable,
-        periods: [Period]
-    ) async throws -> Int {
-        try await requestWriteAccess()
+        periods: [Period],
+        existingRecords: [CalendarExportRecord]
+    ) async throws -> ExportSummary {
+        try await requestAccess()
         guard let destination = store.defaultCalendarForNewEvents else {
             throw CalendarServiceError.noWritableCalendar
         }
 
-        let occurrences = try CalendarOccurrenceFactory.makeOccurrences(for: rule, periods: periods)
+        var occurrences: [CalendarOccurrence] = []
+        for rule in rules {
+            occurrences.append(contentsOf: try CalendarOccurrenceFactory.makeOccurrences(course: course, rule: rule, periods: periods))
+        }
+
+        let plan = CalendarSyncPlanner.plan(occurrences: occurrences, existing: existingRecords)
+        var byKey = Dictionary(existingRecords.map { ($0.occurrenceKey, $0) }, uniquingKeysWith: { first, _ in first })
+        var created = 0
+        var updated = 0
+        var newRecords: [CalendarExportRecord] = []
+
+        for occurrence in plan.toCreate + plan.toUpdate {
+            let isUpdate = !plan.toCreate.contains(occurrence)
+            let existingEventID = byKey[occurrence.occurrenceKey]?.eventIdentifier
+            let event = try eventFor(occurrence, course: course, table: table, existingEventID: existingEventID, store: store, destination: destination)
+            try store.save(event, span: .thisEvent, commit: false)
+            if isUpdate { updated += 1 } else { created += 1 }
+            let record = CalendarExportRecord(
+                id: byKey[occurrence.occurrenceKey]?.id ?? UUID(),
+                occurrenceKey: occurrence.occurrenceKey,
+                contentHash: occurrence.fingerprint,
+                fingerprint: occurrence.fingerprint,
+                eventIdentifier: event.eventIdentifier,
+                lastExportedAt: .now
+            )
+            byKey[occurrence.occurrenceKey] = record
+            newRecords.append(record)
+        }
+
+        // Remove stale events that this app created but are no longer scheduled.
+        for record in plan.toDeleteRecords {
+            if let identifier = record.eventIdentifier, let event = store.event(withIdentifier: identifier) {
+                try? store.remove(event, span: .thisEvent, commit: false)
+            }
+            byKey.removeValue(forKey: record.occurrenceKey)
+        }
+
+        try store.commit()
+
+        return ExportSummary(
+            created: created,
+            updated: updated,
+            skipped: plan.toSkip.count,
+            allRecords: Array(byKey.values),
+            records: newRecords
+        )
+    }
+
+    /// Whole-table export with a pre-computed summary.
+    func exportAll(
+        table: CourseTable,
+        periods: [Period],
+        courses: [StoredCourse],
+        existingRecords: [CalendarExportRecord]
+    ) async throws -> ExportSummary {
+        var allCreated = 0
+        var allUpdated = 0
+        var allSkipped = 0
+        var records = existingRecords
+        for stored in courses {
+            let summary = try await export(
+                course: stored.course,
+                rules: stored.rules,
+                table: table,
+                periods: periods,
+                existingRecords: records
+            )
+            allCreated += summary.created
+            allUpdated += summary.updated
+            allSkipped += summary.skipped
+            records = summary.allRecords
+        }
+        return ExportSummary(created: allCreated, updated: allUpdated, skipped: allSkipped, allRecords: records, records: records)
+    }
+
+    private func eventFor(
+        _ occurrence: CalendarOccurrence,
+        course: Course,
+        table: CourseTable,
+        existingEventID: String?,
+        store: EKEventStore,
+        destination: EKCalendar
+    ) throws -> EKEvent {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(identifier: table.timeZoneID) ?? .current
-        let semesterStart = calendar.startOfDay(for: table.semesterStartDate)
-
-        for occurrence in occurrences {
-            let dayOffset = (occurrence.semesterWeek - 1) * 7 + (occurrence.weekday - 1)
-            guard let courseDay = calendar.date(byAdding: .day, value: dayOffset, to: semesterStart),
-                  let startDate = calendar.date(byAdding: .minute, value: occurrence.startMinuteOfDay, to: courseDay),
-                  let endDate = calendar.date(byAdding: .minute, value: occurrence.endMinuteOfDay, to: courseDay)
-            else {
-                throw CalendarServiceError.invalidSemesterDate
-            }
-
-            let event = EKEvent(eventStore: store)
-            event.title = course.name
-            event.location = course.location
-            let details = [course.teacher, course.notes]
-                .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
-                .filter { !$0.isEmpty }
-            event.notes = (details + ["由课程表 App 导入"]).joined(separator: "\n")
-            event.startDate = startDate
-            event.endDate = endDate
-            event.calendar = destination
-            if let minutes = occurrence.reminderMinutes ?? table.defaultReminderMinutes {
-                event.addAlarm(EKAlarm(relativeOffset: TimeInterval(-minutes * 60)))
-            }
-            try store.save(event, span: .thisEvent, commit: false)
+        guard let day = SemesterCalendar.date(
+            semesterStart: table.semesterStartDate,
+            week: occurrence.semesterWeek,
+            weekday: occurrence.weekday,
+            calendar: calendar
+        ),
+        let start = calendar.date(byAdding: .minute, value: occurrence.startMinuteOfDay, to: day),
+        let end = calendar.date(byAdding: .minute, value: occurrence.endMinuteOfDay, to: day) else {
+            throw CalendarServiceError.invalidSemesterDate
         }
-        try store.commit()
-        return occurrences.count
+
+        let event: EKEvent
+        if let existingEventID, let match = store.event(withIdentifier: existingEventID) {
+            event = match
+        } else {
+            event = EKEvent(eventStore: store)
+        }
+        event.title = course.name
+        event.location = course.location
+        let details = [course.teacher, course.notes]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        event.notes = (details + ["由流云课表导入 · \(table.name)"]).joined(separator: "\n")
+        event.startDate = start
+        event.endDate = end
+        event.calendar = destination
+        event.alarms?.forEach { event.removeAlarm($0) }
+        let minutes = occurrence.reminderMinutes ?? table.defaultReminderMinutes
+        if let minutes, minutes >= 0 {
+            event.addAlarm(EKAlarm(relativeOffset: TimeInterval(-minutes * 60)))
+        }
+        return event
     }
 }
