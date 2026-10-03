@@ -70,7 +70,7 @@ enum GlassStyle {
 extension View {
     /// Liquid Glass with a graceful fallback for iOS 17–25.
     @ViewBuilder
-    func liuyunGlass<S: Shape>(_ style: GlassStyle = .regular, in shape: S = Capsule(), stroke: Bool = true) -> some View {
+    func liuyunGlass<S: InsettableShape>(_ style: GlassStyle = .regular, in shape: S = Capsule(), stroke: Bool = true) -> some View {
         if #available(iOS 26.0, *) {
             if style.isInteractive {
                 self.glassEffect(style.native, in: shape)

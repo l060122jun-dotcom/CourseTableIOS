@@ -135,7 +135,11 @@ struct CourseEditorSheet: View {
             ForEach(WeekPattern.allCases) { Text($0.label).tag($0) }
         }
         .onChange(of: rule.wrappedValue.pattern) { _, pattern in
-            rule.wrappedValue.weekSet = WeekPattern.weeks(range: rule.wrappedValue.startWeek...rule.wrappedValue.endWeek, pattern: pattern)
+            let draft = rule.wrappedValue
+            rule.wrappedValue.weekSet = WeekPattern.weeks(
+                range: min(draft.startWeek, draft.endWeek)...max(draft.startWeek, draft.endWeek),
+                pattern: pattern
+            )
         }
     }
 
@@ -147,13 +151,13 @@ struct CourseEditorSheet: View {
                     ForEach(1...max(1, model.table.totalWeeks), id: \.self) { Text("第 \($0) 周").tag($0) }
                 }
                 .labelsHidden()
-                .onChange(of: rule.wrappedValue.startWeek) { _, _ in rebuildWeeks(rule.wrappedValue) }
+                .onChange(of: rule.wrappedValue.startWeek) { _, _ in rebuildWeeks(rule) }
                 Text("结束周").font(.footnote)
                 Picker("", selection: rule.endWeek) {
                     ForEach(1...max(1, model.table.totalWeeks), id: \.self) { Text("第 \($0) 周").tag($0) }
                 }
                 .labelsHidden()
-                .onChange(of: rule.wrappedValue.endWeek) { _, _ in rebuildWeeks(rule.wrappedValue) }
+                .onChange(of: rule.wrappedValue.endWeek) { _, _ in rebuildWeeks(rule) }
             }
             Text("已选 \(rule.wrappedValue.weekSet.count) 周：\(weekSummary(rule.wrappedValue.weekSet))")
                 .font(.caption2)
@@ -161,8 +165,12 @@ struct CourseEditorSheet: View {
         }
     }
 
-    private func rebuildWeeks(_ draft: DraftRule) {
-        draft.weekSet = WeekPattern.weeks(range: min(draft.startWeek, draft.endWeek)...max(draft.startWeek, draft.endWeek), pattern: draft.pattern)
+    private func rebuildWeeks(_ rule: Binding<DraftRule>) {
+        let draft = rule.wrappedValue
+        rule.wrappedValue.weekSet = WeekPattern.weeks(
+            range: min(draft.startWeek, draft.endWeek)...max(draft.startWeek, draft.endWeek),
+            pattern: draft.pattern
+        )
     }
 
     private func weekSummary(_ weeks: Set<Int>) -> String {
