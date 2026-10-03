@@ -76,3 +76,45 @@ jobs:
           name: liuyun-course-table-unsigned-ipa
           path: CourseTable-unsigned.ipa
           if-no-files-found: error
+
+      - name: Build simulator app for screenshots
+        run: |
+          set -euo pipefail
+          xcodebuild build \
+            -project CourseTable.xcodeproj \
+            -scheme CourseTable \
+            -destination "generic/platform=iOS Simulator" \
+            -derivedDataPath build-sim \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: Capture simulator screenshots
+        run: |
+          set -euo pipefail
+          xcrun simctl list devices available
+          UDID=$(xcrun simctl list devices available | grep -m1 -E 'iPhone 17 Pro \(' | sed -E 's/.*\(([A-F0-9-]+)\).*/\1/')
+          test -n "$UDID"
+          echo "Using simulator: $UDID"
+          xcrun simctl boot "$UDID" || true
+          sleep 15
+          APP=$(find build-sim/Build/Products/Debug-iphonesimulator -maxdepth 1 -name "*.app" | head -1)
+          xcrun simctl install "$UDID" "$APP"
+          mkdir -p artifacts/screens
+          for SCREEN in home import settings; do
+            xcrun simctl terminate "$UDID" com.codex.coursetable.app || true
+            sleep 1
+            if [ "$SCREEN" = "home" ]; then
+              xcrun simctl launch "$UDID" com.codex.coursetable.app --demo-data
+            else
+              xcrun simctl launch "$UDID" com.codex.coursetable.app --demo-data "--screen=$SCREEN"
+            fi
+            sleep 4
+            xcrun simctl io "$UDID" screenshot "artifacts/screens/$SCREEN.png"
+          done
+
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: liuyun-course-table-screens
+          path: artifacts/screens
+
