@@ -242,7 +242,11 @@ struct GlassActionButton: View {
             .foregroundStyle(tint)
             .padding(.horizontal, 16)
             .padding(.vertical, 11)
-            .liuyunGlass(.interactiveTinted(tint), in: Capsule())
+            .background(
+                Capsule(style: .continuous)
+                    .fill(tint.opacity(0.14))
+                    .overlay(Capsule(style: .continuous).strokeBorder(.white.opacity(0.6), lineWidth: 0.75))
+            )
         }
         .buttonStyle(.plain)
     }
