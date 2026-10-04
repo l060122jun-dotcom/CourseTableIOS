@@ -32,6 +32,7 @@ struct SettingsScreen: View {
         ScrollView(showsIndicators: false) {
             VStack(spacing: 16) {
                 header
+                appearanceCard
                 tableCard
                 periodCard
                 reminderCard
@@ -75,6 +76,25 @@ struct SettingsScreen: View {
                 Text("设置").font(.system(size: 24, weight: .bold, design: .rounded))
                 Text("课程表信息、节次时间与日历导出")
                     .font(.system(size: 13)).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private var appearanceCard: some View {
+        GlassCard(cornerRadius: 22) {
+            VStack(alignment: .leading, spacing: 14) {
+                Text("外观").font(.system(size: 15, weight: .bold))
+                Picker("外观模式", selection: Binding(
+                    get: { model.appearance },
+                    set: { withAnimation(.easeInOut(duration: 0.25)) { model.setAppearance($0) } }
+                )) {
+                    ForEach(AppearanceMode.allCases) { mode in
+                        Text(mode.label).tag(mode)
+                    }
+                }
+                .pickerStyle(.segmented)
+                Text("深色模式会同步调整背景与玻璃卡片的明暗。")
+                    .font(.system(size: 12)).foregroundStyle(.secondary)
             }
         }
     }

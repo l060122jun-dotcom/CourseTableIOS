@@ -14,6 +14,34 @@ enum GlassPalette {
     static let surface = Color.white
     static let accent = Color(red: 0.05, green: 0.47, blue: 1.0)
 
+    /// Backdrop base colours that adapt to the active appearance.
+    static func backdropColors(for scheme: ColorScheme) -> [Color] {
+        if scheme == .dark {
+            return [
+                Color(red: 0.05, green: 0.06, blue: 0.12),
+                Color(red: 0.07, green: 0.08, blue: 0.16),
+                Color(red: 0.10, green: 0.07, blue: 0.17),
+                Color(red: 0.06, green: 0.09, blue: 0.16),
+                Color(red: 0.11, green: 0.07, blue: 0.16),
+                Color(red: 0.14, green: 0.08, blue: 0.17),
+                Color(red: 0.05, green: 0.12, blue: 0.16),
+                Color(red: 0.07, green: 0.10, blue: 0.17),
+                Color(red: 0.06, green: 0.11, blue: 0.15)
+            ]
+        }
+        return [
+            Color(red: 0.91, green: 0.93, blue: 1.00),
+            Color(red: 0.86, green: 0.89, blue: 1.00),
+            Color(red: 0.93, green: 0.89, blue: 1.00),
+            Color(red: 0.84, green: 0.91, blue: 1.00),
+            Color(red: 0.93, green: 0.88, blue: 1.00),
+            Color(red: 0.98, green: 0.91, blue: 0.97),
+            Color(red: 0.87, green: 0.97, blue: 0.99),
+            Color(red: 0.91, green: 0.95, blue: 1.00),
+            Color(red: 0.89, green: 0.96, blue: 0.99)
+        ]
+    }
+
     static func color(fromHex hex: String) -> Color {
         var value = hex.trimmingCharacters(in: .whitespacesAndNewlines)
         if value.hasPrefix("#") { value.removeFirst() }
@@ -86,6 +114,8 @@ extension View {
 /// A calm, static pastel mesh. Rendered once and cached by the compositor, so
 /// glass elements above it never have to re-sample a moving backdrop.
 struct GlassBackground: View {
+    @Environment(\.colorScheme) private var scheme
+
     var body: some View {
         MeshGradient(
             width: 3,
@@ -95,17 +125,7 @@ struct GlassBackground: View {
                 .init(0.0, 0.5), .init(0.48, 0.46), .init(1.0, 0.5),
                 .init(0.0, 1.0), .init(0.5, 1.0), .init(1.0, 1.0)
             ],
-            colors: [
-                Color(red: 0.91, green: 0.93, blue: 1.00),
-                Color(red: 0.86, green: 0.89, blue: 1.00),
-                Color(red: 0.93, green: 0.89, blue: 1.00),
-                Color(red: 0.84, green: 0.91, blue: 1.00),
-                Color(red: 0.93, green: 0.88, blue: 1.00),
-                Color(red: 0.98, green: 0.91, blue: 0.97),
-                Color(red: 0.87, green: 0.97, blue: 0.99),
-                Color(red: 0.91, green: 0.95, blue: 1.00),
-                Color(red: 0.89, green: 0.96, blue: 0.99)
-            ]
+            colors: GlassPalette.backdropColors(for: scheme)
         )
         .ignoresSafeArea()
         .allowsHitTesting(false)
@@ -122,6 +142,14 @@ struct GlassCard<Content: View>: View {
     var padding: CGFloat = 16
     @ViewBuilder var content: Content
 
+    @Environment(\.colorScheme) private var scheme
+
+    private var highlight: [Color] {
+        scheme == .dark
+            ? [.white.opacity(0.14), .white.opacity(0.02)]
+            : [.white.opacity(0.5), .white.opacity(0.06)]
+    }
+
     var body: some View {
         content
             .padding(padding)
@@ -132,7 +160,7 @@ struct GlassCard<Content: View>: View {
                         RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                             .fill(
                                 LinearGradient(
-                                    colors: [.white.opacity(0.5), .white.opacity(0.06)],
+                                    colors: highlight,
                                     startPoint: .topLeading,
                                     endPoint: .bottomTrailing
                                 )
@@ -147,9 +175,9 @@ struct GlassCard<Content: View>: View {
             )
             .overlay(
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .strokeBorder(.white.opacity(0.4), lineWidth: 0.75)
+                    .strokeBorder(.white.opacity(scheme == .dark ? 0.18 : 0.4), lineWidth: 0.75)
             )
-            .shadow(color: .black.opacity(0.08), radius: 12, x: 0, y: 6)
+            .shadow(color: .black.opacity(scheme == .dark ? 0.35 : 0.08), radius: 12, x: 0, y: 6)
     }
 }
 

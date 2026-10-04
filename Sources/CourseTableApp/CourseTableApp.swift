@@ -12,6 +12,32 @@ struct CourseTableApp: App {
             RootView()
                 .environmentObject(model)
                 .tint(GlassPalette.accent)
+                .preferredColorScheme(model.appearance.colorScheme)
+        }
+    }
+}
+
+/// User-selectable appearance. `system` follows the device setting.
+enum AppearanceMode: String, CaseIterable, Identifiable, Sendable {
+    case system
+    case light
+    case dark
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .system: return "跟随系统"
+        case .light: return "浅色"
+        case .dark: return "深色"
+        }
+    }
+
+    var colorScheme: ColorScheme? {
+        switch self {
+        case .system: return nil
+        case .light: return .light
+        case .dark: return .dark
         }
     }
 }
@@ -25,6 +51,9 @@ final class AppModel: ObservableObject {
     @Published private(set) var document: ScheduleDocument
     @Published var storageLocked: Bool
     @Published var storageMessage: String?
+    @Published var appearance: AppearanceMode
+
+    private static let appearanceKey = "liuyun.appearance"
 
     private let demoMode: Bool
     private let saveQueue = DispatchQueue(label: "com.codex.coursetable.save", qos: .utility)
@@ -33,6 +62,9 @@ final class AppModel: ObservableObject {
     init() {
         let arguments = ProcessInfo.processInfo.arguments
         demoMode = arguments.contains("--demo-data") || arguments.contains(where: { $0.hasPrefix("--screen=") })
+        let storedAppearance = UserDefaults.standard.string(forKey: AppModel.appearanceKey)
+            .flatMap(AppearanceMode.init(rawValue:)) ?? .system
+        appearance = storedAppearance
         if demoMode {
             document = .preview
             storageLocked = false
@@ -198,6 +230,11 @@ final class AppModel: ObservableObject {
     }
 
     // MARK: Storage recovery
+
+    func setAppearance(_ mode: AppearanceMode) {
+        appearance = mode
+        UserDefaults.standard.set(mode.rawValue, forKey: AppModel.appearanceKey)
+    }
 
     func recoverStorage() {
         do {

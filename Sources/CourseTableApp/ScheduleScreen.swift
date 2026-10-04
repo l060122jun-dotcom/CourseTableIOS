@@ -9,6 +9,7 @@ import CourseTableCore
 /// of re-scanning every course for every cell and every week chip.
 struct ScheduleScreen: View {
     @EnvironmentObject private var model: AppModel
+    @Environment(\.colorScheme) private var scheme
     @Namespace private var weekNamespace
 
     @State private var selectedCourseID: UUID?
@@ -154,7 +155,8 @@ struct ScheduleScreen: View {
                 } else {
                     // Solid translucent fill instead of a live material blur:
                     // 17 materials in a scrolling row is a large GPU cost.
-                    Capsule(style: .continuous).fill(Color.white.opacity(0.28))
+                    Capsule(style: .continuous)
+                        .fill(scheme == .dark ? Color.white.opacity(0.10) : Color.white.opacity(0.28))
                 }
             }
         }
