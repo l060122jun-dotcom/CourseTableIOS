@@ -489,16 +489,32 @@ struct DetailSelection: Identifiable {
 private struct CoursePressButton<Content: View>: View {
     let action: () -> Void
     @ViewBuilder let content: () -> Content
+    @State private var touching = false
+    @State private var pulse = false
+    @State private var pulseID = UUID()
     var body: some View {
         Button(action: action) { content() }
-            .buttonStyle(CourseTouchStyle())
+            .buttonStyle(.plain)
+            .modifier(CourseTouchEffect(pressed: touching || pulse))
+            .background(CardTouchObserver { down in
+                touching = down
+                if down {
+                    pulse = true
+                    pulseID = UUID()
+                }
+            })
+            .task(id: pulseID) {
+                try? await Task.sleep(for: .milliseconds(250))
+                guard !Task.isCancelled else { return }
+                withAnimation(.easeOut(duration: 0.15)) { pulse = false }
+            }
     }
 }
 
-private struct CourseTouchStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        let pressed = configuration.isPressed
-        configuration.label
+private struct CourseTouchEffect: ViewModifier {
+    let pressed: Bool
+    func body(content: Content) -> some View {
+        content
             .blur(radius: pressed ? 6 : 0)
             .overlay {
                 RoundedRectangle(cornerRadius: 10)
@@ -507,7 +523,6 @@ private struct CourseTouchStyle: ButtonStyle {
             }
             .clipShape(RoundedRectangle(cornerRadius: 10))
             .contentShape(RoundedRectangle(cornerRadius: 10))
-            .animation(.easeOut(duration: 0.1), value: pressed)
             .sensoryFeedback(.impact(weight: .light), trigger: pressed) { _, down in down }
             .accessibilityAddTraits(.isButton)
     }
