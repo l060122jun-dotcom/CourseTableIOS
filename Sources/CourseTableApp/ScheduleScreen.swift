@@ -260,6 +260,9 @@ struct ScheduleScreen: View {
             if let teacher = match.teacher, !teacher.isEmpty {
                 Text(teacher).font(.system(size: 10))
             }
+            if let timeLabel = match.timeLabel {
+                Text(timeLabel).font(.system(size: 10)).opacity(0.85)
+            }
             if !match.isActiveWeek {
                 Text("非本周").font(.system(size: 10)).opacity(0.7)
             }
@@ -400,6 +403,8 @@ struct WeekSnapshot {
         let teacher: String?
         let color: Color
         let isActiveWeek: Bool
+        /// For custom-time rules: the explicit clock range to show on the card.
+        let timeLabel: String?
     }
 
     /// rows[periodRow][column]; nil means an empty cell.
@@ -412,6 +417,7 @@ struct WeekSnapshot {
         var periodRowIndex: [Int: Int] = [:]
         for (row, period) in periods.enumerated() { periodRowIndex[period.index] = row }
 
+        // Pass 1 — period-based rules own their rows.
         for stored in courses {
             let color = GlassPalette.color(fromHex: stored.course.colorHex)
             let location = (stored.course.location?.isEmpty == false) ? stored.course.location : nil
@@ -436,7 +442,51 @@ struct WeekSnapshot {
                             location: location,
                             teacher: stored.course.teacher,
                             color: color,
-                            isActiveWeek: isActive
+                            isActiveWeek: isActive,
+                            timeLabel: nil
+                        )
+                    }
+                }
+            }
+        }
+
+        // Pass 2 — custom-time rules (e.g. 08:00–11:00) have no period index.
+        // Map each onto the period rows whose clock range they overlap, filling
+        // only rows no period course already occupies.
+        for stored in courses {
+            let color = GlassPalette.color(fromHex: stored.course.colorHex)
+            let location = (stored.course.location?.isEmpty == false) ? stored.course.location : nil
+            for rule in stored.rules where rule.timingMode == .custom {
+                guard let startMinute = rule.customStartMinute,
+                      let endMinute = rule.customEndMinute else { continue }
+                let column = rule.weekday - 1
+                guard column >= 0, column < weekdayCount else { continue }
+                for week in rule.weekSet { activeWeeks.insert(week) }
+
+                let isActive = rule.weekSet.contains(currentWeek)
+                guard isActive || showOutside else { continue }
+
+                let covered = periods.enumerated().filter { _, period in
+                    period.startMinuteOfDay < endMinute && period.endMinuteOfDay > startMinute
+                }
+                // If nothing overlaps (e.g. a break-time slot), fall back to the
+                // last period that starts at or before the custom start.
+                let targets = covered.isEmpty
+                    ? periods.enumerated().filter { $0.element.startMinuteOfDay <= startMinute }.suffix(1).map { $0 }
+                    : covered
+                let timeLabel = "\(Period.text(from: startMinute))–\(Period.text(from: endMinute))"
+                for (row, _) in targets {
+                    let existing = rows[row][column]
+                    if existing == nil || (isActive && existing?.isActiveWeek == false) {
+                        rows[row][column] = Cell(
+                            ruleID: rule.id,
+                            courseID: stored.course.id,
+                            name: stored.course.name,
+                            location: location,
+                            teacher: stored.course.teacher,
+                            color: color,
+                            isActiveWeek: isActive,
+                            timeLabel: timeLabel
                         )
                     }
                 }
