@@ -182,11 +182,21 @@ final class AppModel: ObservableObject {
 
     func deleteTable(_ id: UUID) {
         mutate { doc in
-            guard doc.tables.count > 1 else { return }
             doc.tables.removeAll { $0.id == id }
-            if doc.activeTableID == id, let first = doc.tables.first {
-                doc.activeTableID = first.id
-                doc.tables[0].table.isActive = true
+            if doc.tables.isEmpty {
+                let fresh = CourseTable(
+                    name: "我的课程表",
+                    semesterStartDate: ScheduleDocument.mondayOfCurrentWeek(),
+                    totalWeeks: 18,
+                    isActive: true
+                )
+                doc.tables = [StoredTable(table: fresh, periods: ScheduleDocument.defaultPeriods)]
+            }
+            if !doc.tables.contains(where: { $0.id == doc.activeTableID }) {
+                doc.activeTableID = doc.tables[0].id
+            }
+            for index in doc.tables.indices {
+                doc.tables[index].table.isActive = (doc.tables[index].id == doc.activeTableID)
             }
         }
     }

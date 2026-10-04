@@ -267,60 +267,61 @@ struct TableManagerSheet: View {
                     renamingTable = nil
                 }
             }
-            .alert("删除课程表？", isPresented: Binding(
-                get: { pendingDelete != nil },
-                set: { if !$0 { pendingDelete = nil } }
-            ), presenting: pendingDelete) { table in
-                Button("删除", role: .destructive) { model.deleteTable(table.id) }
-                Button("取消", role: .cancel) {}
-            } message: { table in
-                Text("将删除「\(table.table.name)」及其全部课程，此操作不可撤销。")
-            }
+        }
+        // Attached to a different view than the rename alert above: two alerts
+        // stacked on the SAME view would silently drop the first one.
+        .alert("删除课程表？", isPresented: Binding(
+            get: { pendingDelete != nil },
+            set: { if !$0 { pendingDelete = nil } }
+        ), presenting: pendingDelete) { table in
+            Button("删除", role: .destructive) { model.deleteTable(table.id) }
+            Button("取消", role: .cancel) {}
+        } message: { table in
+            Text("将删除「\(table.table.name)」及其全部课程，此操作不可撤销。")
         }
     }
 
     private func tableRow(_ stored: StoredTable) -> some View {
         let isActive = stored.id == model.document.activeTableID
-        return Button {
-            withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) { model.setActiveTable(stored.id) }
-        } label: {
-            HStack(spacing: 14) {
-                ZStack {
-                    Circle()
-                        .fill(isActive ? AnyShapeStyle(GlassPalette.accent.gradient) : AnyShapeStyle(.ultraThinMaterial))
-                        .frame(width: 40, height: 40)
-                    if isActive {
-                        Image(systemName: "checkmark").font(.system(size: 15, weight: .bold)).foregroundStyle(.white)
-                    } else {
-                        Image(systemName: "calendar").font(.system(size: 15)).foregroundStyle(.secondary)
-                    }
-                }
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(stored.table.name).font(.system(size: 16, weight: .semibold))
-                    Text("\(stored.courses.count) 门课 · \(stored.table.totalWeeks) 周")
-                        .font(.system(size: 12)).foregroundStyle(.secondary)
-                }
-                Spacer()
+        return HStack(spacing: 14) {
+            ZStack {
+                Circle()
+                    .fill(isActive ? AnyShapeStyle(GlassPalette.accent.gradient) : AnyShapeStyle(.ultraThinMaterial))
+                    .frame(width: 40, height: 40)
                 if isActive {
-                    Text("当前").font(.system(size: 11, weight: .bold))
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 8).padding(.vertical, 4)
-                        .background(Capsule().fill(GlassPalette.accent))
+                    Image(systemName: "checkmark").font(.system(size: 15, weight: .bold)).foregroundStyle(.white)
+                } else {
+                    Image(systemName: "calendar").font(.system(size: 15)).foregroundStyle(.secondary)
                 }
             }
-            .padding(14)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(stored.table.name).font(.system(size: 16, weight: .semibold))
+                Text("\(stored.courses.count) 门课 · \(stored.table.totalWeeks) 周")
+                    .font(.system(size: 12)).foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
+            if isActive {
+                Text("当前").font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 8).padding(.vertical, 4)
+                    .background(Capsule().fill(GlassPalette.accent))
+            }
         }
-        .buttonStyle(.plain)
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .liuyunGlass(.regular, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-        // Native iOS menu on long press: 编辑 / 删除.
+        // Whole-card tap target and long-press anchor: `contentShape` makes the
+        // empty area between icon, title and badge respond too.
+        .contentShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .onTapGesture {
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) { model.setActiveTable(stored.id) }
+        }
         .contextMenu {
             Button { renameText = stored.table.name; renamingTable = stored } label: {
                 Label("编辑", systemImage: "pencil")
             }
-            if model.document.tables.count > 1 {
-                Button(role: .destructive) { pendingDelete = stored } label: {
-                    Label("删除", systemImage: "trash")
-                }
+            Button(role: .destructive) { pendingDelete = stored } label: {
+                Label("删除", systemImage: "trash")
             }
         }
     }
