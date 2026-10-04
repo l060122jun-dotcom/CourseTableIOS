@@ -7,8 +7,9 @@ import SwiftUI
 //     per-frame work. Any animated backdrop forces every glass element on top
 //     to re-sample it each frame, which is the main source of jank.
 //   * Glass cards use one material + one gradient + one hairline + one soft
-//     shadow. Shadows and stacked overlays are the expensive part, so they are
-//     kept minimal.
+//     shadow. Shadows and stacked overlays are the expensive part.
+//   * Glass opacity is driven by the `glassOpacity` environment value so the
+//     settings slider can tune the whole system in real time.
 
 enum GlassPalette {
     static let surface = Color.white
@@ -54,58 +55,86 @@ enum GlassPalette {
     }
 }
 
+// MARK: - Glass opacity environment
+
+private struct GlassOpacityKey: EnvironmentKey {
+    static let defaultValue: Double = 0.9
+}
+
+extension EnvironmentValues {
+    /// Global strength of the Liquid Glass surfaces, 0.3...1.0.
+    var glassOpacity: Double {
+        get { self[GlassOpacityKey.self] }
+        set { self[GlassOpacityKey.self] = newValue }
+    }
+}
+
 // MARK: - Backportable glass modifier
 
 enum GlassStyle {
     case regular
     case thin
     case tinted(Color)
-    case interactiveTinted(Color)
 
     @available(iOS 26.0, *)
     var native: Glass {
         switch self {
         case .regular, .thin: return .regular
-        case .tinted(let color), .interactiveTinted(let color): return .regular.tint(color)
+        case .tinted(let color): return .regular.tint(color)
         }
-    }
-
-    var isInteractive: Bool {
-        if case .interactiveTinted = self { return true }
-        return false
     }
 
     var tintColor: Color? {
         switch self {
-        case .tinted(let color), .interactiveTinted(let color): return color
+        case .tinted(let color): return color
         default: return nil
         }
     }
 }
 
-extension View {
-    /// Liquid Glass with a graceful fallback for iOS 17–25.
-    @ViewBuilder
-    func liuyunGlass<S: InsettableShape>(_ style: GlassStyle = .regular, in shape: S = Capsule(), stroke: Bool = true) -> some View {
-        if #available(iOS 26.0, *) {
-            self.glassEffect(style.native, in: shape)
-        } else {
-            self.background(
-                shape
-                    .fill(style.tintColor?.opacity(0.28) ?? Color.clear)
-                    .background(shape.fill(.ultraThinMaterial))
-                    .overlay(
+/// The reusable glass surface: Liquid Glass on iOS 26, an
+/// `ultraThinMaterial` + highlight + hairline everywhere else. Its visual
+/// weight follows `glassOpacity`.
+struct GlassSurface<S: InsettableShape>: View {
+    var style: GlassStyle = .regular
+    var shape: S
+    var stroke: Bool = true
+
+    @Environment(\.colorScheme) private var scheme
+    @Environment(\.glassOpacity) private var opacity
+
+    var body: some View {
+        Group {
+            if #available(iOS 26.0, *) {
+                Color.clear
+                    .glassEffect(style.native, in: shape)
+            } else {
+                ZStack {
+                    shape.fill(.ultraThinMaterial)
+                    if let tint = style.tintColor {
+                        shape.fill(tint.opacity(0.28))
+                    }
+                    shape.fill(
                         LinearGradient(
-                            colors: [.white.opacity(0.45), .white.opacity(0.05)],
+                            colors: scheme == .dark
+                                ? [.white.opacity(0.16), .white.opacity(0.02)]
+                                : [.white.opacity(0.5), .white.opacity(0.06)],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         )
-                        .clipShape(shape)
-                        .allowsHitTesting(false)
                     )
-                    .overlay(stroke ? shape.strokeBorder(.white.opacity(0.35), lineWidth: 0.75) : nil)
-            )
+                }
+            }
         }
+        .opacity(opacity)
+        .overlay(stroke ? shape.strokeBorder(.white.opacity(scheme == .dark ? 0.18 : 0.38), lineWidth: 0.75) : nil)
+    }
+}
+
+extension View {
+    /// Applies the Liquid Glass surface behind this view.
+    func liuyunGlass<S: InsettableShape>(_ style: GlassStyle = .regular, in shape: S = Capsule(), stroke: Bool = true) -> some View {
+        background(GlassSurface(style: style, shape: shape, stroke: stroke))
     }
 }
 
@@ -134,8 +163,7 @@ struct GlassBackground: View {
 
 // MARK: - Glass card
 
-/// A layered translucent container: an inner glass fill, a soft gradient and a
-/// single hairline. Kept deliberately light — no stacked shadows.
+/// A layered translucent container whose fill strength follows `glassOpacity`.
 struct GlassCard<Content: View>: View {
     var cornerRadius: CGFloat = 22
     var tint: Color? = nil
@@ -143,36 +171,32 @@ struct GlassCard<Content: View>: View {
     @ViewBuilder var content: Content
 
     @Environment(\.colorScheme) private var scheme
+    @Environment(\.glassOpacity) private var opacity
 
     private var highlight: [Color] {
         scheme == .dark
-            ? [.white.opacity(0.14), .white.opacity(0.02)]
+            ? [.white.opacity(0.16), .white.opacity(0.02)]
             : [.white.opacity(0.5), .white.opacity(0.06)]
     }
 
     var body: some View {
         content
             .padding(padding)
-            .background(
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .fill(.ultraThinMaterial)
-                    .overlay(
+            .background {
+                ZStack {
+                    if #available(iOS 26.0, *) {
+                        Color.clear.glassEffect(.regular, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+                    } else {
+                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous).fill(.ultraThinMaterial)
                         RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                            .fill(
-                                LinearGradient(
-                                    colors: highlight,
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
-                            )
-                    )
-                    .overlay {
-                        if let tint {
-                            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                                .fill(tint.opacity(0.14))
-                        }
+                            .fill(LinearGradient(colors: highlight, startPoint: .topLeading, endPoint: .bottomTrailing))
                     }
-            )
+                    if let tint {
+                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous).fill(tint.opacity(0.14))
+                    }
+                }
+                .opacity(opacity)
+            }
             .overlay(
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                     .strokeBorder(.white.opacity(scheme == .dark ? 0.18 : 0.4), lineWidth: 0.75)

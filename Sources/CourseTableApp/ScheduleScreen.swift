@@ -10,6 +10,7 @@ import CourseTableCore
 struct ScheduleScreen: View {
     @EnvironmentObject private var model: AppModel
     @Environment(\.colorScheme) private var scheme
+    @Environment(\.glassOpacity) private var glassOpacity
     @Namespace private var weekNamespace
 
     @State private var selectedCourseID: UUID?
@@ -101,6 +102,11 @@ struct ScheduleScreen: View {
 
     private var weekdayTodayTint: Color { Color(red: 0.30, green: 0.68, blue: 0.45) }
 
+    private var baseChipFill: Color {
+        let base = scheme == .dark ? 0.10 : 0.28
+        return Color.white.opacity(base * (0.5 + 0.5 * glassOpacity))
+    }
+
     private var weekSubtitle: String {
         let current = model.currentWeek
         let native = SemesterCalendar.naturalWeek(semesterStart: model.table.semesterStartDate, totalWeeks: model.table.totalWeeks)
@@ -156,7 +162,7 @@ struct ScheduleScreen: View {
                     // Solid translucent fill instead of a live material blur:
                     // 17 materials in a scrolling row is a large GPU cost.
                     Capsule(style: .continuous)
-                        .fill(scheme == .dark ? Color.white.opacity(0.10) : Color.white.opacity(0.28))
+                        .fill(baseChipFill)
                 }
             }
         }

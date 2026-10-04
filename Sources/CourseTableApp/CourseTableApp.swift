@@ -13,6 +13,7 @@ struct CourseTableApp: App {
                 .environmentObject(model)
                 .tint(GlassPalette.accent)
                 .preferredColorScheme(model.appearance.colorScheme)
+                .environment(\.glassOpacity, model.glassOpacity)
         }
     }
 }
@@ -52,8 +53,10 @@ final class AppModel: ObservableObject {
     @Published var storageLocked: Bool
     @Published var storageMessage: String?
     @Published var appearance: AppearanceMode
+    @Published var glassOpacity: Double
 
     private static let appearanceKey = "liuyun.appearance"
+    private static let glassOpacityKey = "liuyun.glassOpacity"
 
     private let demoMode: Bool
     private let saveQueue = DispatchQueue(label: "com.codex.coursetable.save", qos: .utility)
@@ -65,6 +68,8 @@ final class AppModel: ObservableObject {
         let storedAppearance = UserDefaults.standard.string(forKey: AppModel.appearanceKey)
             .flatMap(AppearanceMode.init(rawValue:)) ?? .system
         appearance = storedAppearance
+        let storedOpacity = UserDefaults.standard.object(forKey: AppModel.glassOpacityKey) as? Double
+        glassOpacity = min(1.0, max(0.3, storedOpacity ?? 0.9))
         if demoMode {
             document = .preview
             storageLocked = false
@@ -234,6 +239,12 @@ final class AppModel: ObservableObject {
     func setAppearance(_ mode: AppearanceMode) {
         appearance = mode
         UserDefaults.standard.set(mode.rawValue, forKey: AppModel.appearanceKey)
+    }
+
+    func setGlassOpacity(_ value: Double) {
+        let clamped = min(1.0, max(0.3, value))
+        glassOpacity = clamped
+        UserDefaults.standard.set(clamped, forKey: AppModel.glassOpacityKey)
     }
 
     func recoverStorage() {

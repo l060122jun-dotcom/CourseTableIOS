@@ -95,7 +95,29 @@ struct SettingsScreen: View {
                     }
                 }
                 .pickerStyle(.segmented)
-                Text("深色模式会同步调整背景与玻璃卡片的明暗。")
+
+                Divider().opacity(0.3)
+
+                HStack {
+                    Text("液态玻璃不透明度").font(.system(size: 14)).foregroundStyle(.secondary)
+                    Spacer()
+                    Text("\(Int(model.glassOpacity * 100))%")
+                        .font(.system(size: 14, weight: .semibold, design: .rounded))
+                        .foregroundStyle(GlassPalette.accent)
+                }
+                HStack(spacing: 10) {
+                    Image(systemName: "square.dashed").font(.system(size: 13)).foregroundStyle(.secondary)
+                    Slider(
+                        value: Binding(
+                            get: { model.glassOpacity },
+                            set: { model.setGlassOpacity($0) }
+                        ),
+                        in: 0.3...1.0
+                    )
+                    .tint(GlassPalette.accent)
+                    Image(systemName: "square.fill").font(.system(size: 13)).foregroundStyle(GlassPalette.accent)
+                }
+                Text("向左更通透、向右更厚重，实时生效。")
                     .font(.system(size: 12)).foregroundStyle(.secondary)
             }
         }
