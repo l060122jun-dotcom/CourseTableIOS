@@ -198,10 +198,9 @@ struct ScheduleScreen: View {
                                 }
                             }
                             ForEach(snapshot.blocks(column: column), id: \.row) { block in
-                                Button { selectedCourseID = block.cell.courseID } label: {
+                                CoursePressButton(action: { selectedCourseID = block.cell.courseID }) {
                                     courseBlock(block.cell, height: CGFloat(block.count) * periodHeight - 3)
                                 }
-                                .buttonStyle(CourseCardPressStyle())
                                 .offset(y: CGFloat(block.row) * periodHeight)
                             }
                         }
@@ -212,15 +211,9 @@ struct ScheduleScreen: View {
             }
         }
         .contentShape(Rectangle())
-        .simultaneousGesture(
-            DragGesture(minimumDistance: 24)
-                .onEnded { value in
-                    let x = value.translation.width
-                    let y = value.translation.height
-                    guard abs(x) > 55, abs(x) > abs(y) * 1.5 else { return }
-                    model.setCurrentWeek(model.currentWeek + (x < 0 ? 1 : -1))
-                }
-        )
+        .background(WeekSwipeCapture { direction in
+            model.setCurrentWeek(model.currentWeek + direction)
+        })
         .sensoryFeedback(.selection, trigger: model.currentWeek)
     }
 
@@ -474,16 +467,31 @@ struct DetailSelection: Identifiable {
     let id: UUID
 }
 
-private struct CourseCardPressStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .blur(radius: configuration.isPressed ? 2 : 0)
+private struct CoursePressButton<Content: View>: View {
+    let action: () -> Void
+    @ViewBuilder let content: () -> Content
+    @GestureState private var pressed = false
+
+    var body: some View {
+        content()
+            .blur(radius: pressed ? 6 : 0)
             .overlay {
                 RoundedRectangle(cornerRadius: 10)
-                    .fill(.white.opacity(configuration.isPressed ? 0.12 : 0))
+                    .fill(.white.opacity(pressed ? 0.24 : 0))
                     .allowsHitTesting(false)
             }
-            .animation(.easeOut(duration: 0.14), value: configuration.isPressed)
-            .sensoryFeedback(.impact(weight: .light), trigger: configuration.isPressed) { _, pressed in pressed }
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+            .contentShape(RoundedRectangle(cornerRadius: 10))
+            .onTapGesture(perform: action)
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 0)
+                    .updating($pressed) { value, state, _ in
+                        state = abs(value.translation.width) < 12 && abs(value.translation.height) < 12
+                    }
+            )
+            .animation(.easeOut(duration: 0.1), value: pressed)
+            .sensoryFeedback(.impact(weight: .light), trigger: pressed) { _, down in down }
+            .accessibilityAddTraits(.isButton)
+            .accessibilityAction(action)
     }
 }
