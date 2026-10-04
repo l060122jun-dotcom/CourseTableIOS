@@ -63,7 +63,7 @@ struct WeekSwipeCapture: UIViewRepresentable {
             host = nil
         }
 
-        func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+        override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
             let velocity = pan.velocity(in: self)
             return bounds.contains(pan.location(in: self)) && abs(velocity.x) > abs(velocity.y) * 1.3
         }

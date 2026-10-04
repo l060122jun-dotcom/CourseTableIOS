@@ -492,6 +492,6 @@ private struct CoursePressButton<Content: View>: View {
             .animation(.easeOut(duration: 0.1), value: pressed)
             .sensoryFeedback(.impact(weight: .light), trigger: pressed) { _, down in down }
             .accessibilityAddTraits(.isButton)
-            .accessibilityAction(action)
+            .accessibilityAction { action() }
     }
 }
