@@ -267,7 +267,9 @@ struct ImportScreen: View {
         beginScanning("正在解析表格并识别课程…")
         Task {
             do {
-                let data = try FileExporter.readData(at: url)
+                let data = try await Task.detached(priority: .userInitiated) {
+                    try FileExporter.readData(at: url)
+                }.value
                 let ext = url.pathExtension
                 draft = try await AIScheduleService().recognize(spreadsheet: data, fileExtension: ext)
             } catch {

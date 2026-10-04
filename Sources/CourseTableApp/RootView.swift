@@ -18,13 +18,21 @@ struct RootView: View {
         ZStack(alignment: .bottom) {
             GlassBackground()
 
-            Group {
-                switch tab {
-                case .schedule: ScheduleScreen()
-                case .importTab: ImportScreen()
-                case .settings: SettingsScreen()
-                }
+            ZStack {
+                ScheduleScreen()
+                    .opacity(tab == .schedule ? 1 : 0)
+                    .allowsHitTesting(tab == .schedule)
+                    .accessibilityHidden(tab != .schedule)
+                ImportScreen()
+                    .opacity(tab == .importTab ? 1 : 0)
+                    .allowsHitTesting(tab == .importTab)
+                    .accessibilityHidden(tab != .importTab)
+                SettingsScreen()
+                    .opacity(tab == .settings ? 1 : 0)
+                    .allowsHitTesting(tab == .settings)
+                    .accessibilityHidden(tab != .settings)
             }
+            .transaction { $0.animation = nil }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             GlassTabBar(selection: $tab, namespace: tabNamespace)

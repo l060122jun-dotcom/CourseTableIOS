@@ -184,13 +184,10 @@ struct GlassCard<Content: View>: View {
             .padding(padding)
             .background {
                 ZStack {
-                    if #available(iOS 26.0, *) {
-                        Color.clear.glassEffect(.regular, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-                    } else {
-                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous).fill(.ultraThinMaterial)
-                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                            .fill(LinearGradient(colors: highlight, startPoint: .topLeading, endPoint: .bottomTrailing))
-                    }
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .fill(scheme == .dark ? Color(white: 0.13).opacity(0.8) : Color.white.opacity(0.55))
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .fill(LinearGradient(colors: highlight, startPoint: .topLeading, endPoint: .bottomTrailing))
                     if let tint {
                         RoundedRectangle(cornerRadius: cornerRadius, style: .continuous).fill(tint.opacity(0.14))
                     }
@@ -201,7 +198,6 @@ struct GlassCard<Content: View>: View {
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                     .strokeBorder(.white.opacity(scheme == .dark ? 0.18 : 0.4), lineWidth: 0.75)
             )
-            .shadow(color: .black.opacity(scheme == .dark ? 0.35 : 0.08), radius: 12, x: 0, y: 6)
     }
 }
 

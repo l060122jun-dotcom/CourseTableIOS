@@ -44,7 +44,7 @@ enum AIScheduleError: LocalizedError {
     }
 }
 
-final class AIScheduleService {
+actor AIScheduleService {
     private let config: AIScheduleConfig
     init(config: AIScheduleConfig = .default) { self.config = config }
 
@@ -124,6 +124,7 @@ final class AIScheduleService {
         let body: [String: Any] = [
             "model": config.model,
             "temperature": temperature,
+            "reasoning_effort": "none",
             "response_format": ["type": "json_object"],
             "messages": [
                 ["role": "system", "content": Self.systemPrompt],
