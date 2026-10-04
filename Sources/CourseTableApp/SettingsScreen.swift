@@ -86,7 +86,9 @@ struct SettingsScreen: View {
                 Text("外观").font(.system(size: 15, weight: .bold))
                 Picker("外观模式", selection: Binding(
                     get: { model.appearance },
-                    set: { withAnimation(.easeInOut(duration: 0.25)) { model.setAppearance($0) } }
+                    set: { mode in
+                        withAnimation(.easeInOut(duration: 0.25)) { model.setAppearance(mode) }
+                    }
                 )) {
                     ForEach(AppearanceMode.allCases) { mode in
                         Text(mode.label).tag(mode)
