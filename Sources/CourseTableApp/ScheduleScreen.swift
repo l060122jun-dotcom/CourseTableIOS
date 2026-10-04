@@ -539,32 +539,33 @@ struct DetailSelection: Identifiable {
 private struct CoursePressButton<Content: View>: View {
     let action: () -> Void
     @ViewBuilder let content: () -> Content
-    @State private var touching = false
-    @State private var pulse = false
-    @State private var pulseID = UUID()
     var body: some View {
         Button(action: action) { content() }
-            .buttonStyle(.plain)
-            .modifier(CourseTouchEffect(pressed: touching || pulse))
-            .background(CardTouchObserver { down in
-                touching = down
-                if down {
-                    pulse = true
-                    pulseID = UUID()
-                }
-            })
-            .task(id: pulseID) {
-                try? await Task.sleep(for: .milliseconds(250))
-                guard !Task.isCancelled else { return }
-                withAnimation(.easeOut(duration: 0.15)) { pulse = false }
-            }
+            .buttonStyle(CourseTouchStyle())
+            .accessibilityAddTraits(.isButton)
     }
 }
 
-private struct CourseTouchEffect: ViewModifier {
-    let pressed: Bool
-    func body(content: Content) -> some View {
-        content
+/// SwiftUI-only press feedback: blur + soft highlight while held, with a short
+/// minimum duration so a quick tap is still visible. No UIKit bridge is
+/// involved — a `UIViewRepresentable` here previously crashed on teardown with
+/// a Swift exclusivity fault when it wrote back into `@State`.
+private struct CourseTouchStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        PressFeedback(isPressed: configuration.isPressed) { configuration.label }
+    }
+}
+
+private struct PressFeedback<Content: View>: View {
+    let isPressed: Bool
+    @ViewBuilder let content: () -> Content
+    @State private var visible = false
+    @State private var pulseID = UUID()
+
+    private var pressed: Bool { isPressed || visible }
+
+    var body: some View {
+        content()
             .blur(radius: pressed ? 6 : 0)
             .overlay {
                 RoundedRectangle(cornerRadius: 10)
@@ -573,7 +574,16 @@ private struct CourseTouchEffect: ViewModifier {
             }
             .clipShape(RoundedRectangle(cornerRadius: 10))
             .contentShape(RoundedRectangle(cornerRadius: 10))
+            .onChange(of: isPressed) { _, down in
+                guard down else { return }
+                visible = true
+                pulseID = UUID()
+            }
+            .task(id: pulseID) {
+                try? await Task.sleep(for: .milliseconds(250))
+                guard !Task.isCancelled else { return }
+                withAnimation(.easeOut(duration: 0.15)) { visible = false }
+            }
             .sensoryFeedback(.impact(weight: .light), trigger: pressed) { _, down in down }
-            .accessibilityAddTraits(.isButton)
     }
 }
