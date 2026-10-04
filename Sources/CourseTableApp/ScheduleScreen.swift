@@ -117,7 +117,7 @@ struct ScheduleScreen: View {
     // MARK: Week selector
 
     private func weekSelector(activeWeeks: Set<Int>) -> some View {
-        ScrollViewReader { proxy in
+        Group {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
                     ForEach(1...model.table.totalWeeks, id: \.self) { week in
@@ -128,19 +128,13 @@ struct ScheduleScreen: View {
                 .padding(.horizontal, 4)
                 .padding(.vertical, 4)
             }
-            .onAppear { proxy.scrollTo(model.currentWeek, anchor: .center) }
-            .onChange(of: model.currentWeek) { _, newValue in
-                proxy.scrollTo(newValue, anchor: .center)
-            }
         }
     }
 
     private func weekChip(_ week: Int, hasCourses: Bool) -> some View {
         let isSelected = week == model.currentWeek
         return Button {
-            withAnimation(.spring(response: 0.42, dampingFraction: 0.78)) {
-                model.setCurrentWeek(week)
-            }
+            model.setCurrentWeek(week)
         } label: {
             VStack(spacing: 3) {
                 Text("\(week)").font(.system(size: 16, weight: .bold, design: .rounded))
@@ -157,7 +151,6 @@ struct ScheduleScreen: View {
                         .fill(GlassPalette.accent.gradient)
                         .overlay(Capsule().strokeBorder(.white.opacity(0.35), lineWidth: 0.75))
                         .shadow(color: GlassPalette.accent.opacity(0.3), radius: 8, y: 3)
-                        .matchedGeometryEffect(id: "weekDrop", in: weekNamespace)
                 } else {
                     // Solid translucent fill instead of a live material blur:
                     // 17 materials in a scrolling row is a large GPU cost.
@@ -167,6 +160,8 @@ struct ScheduleScreen: View {
             }
         }
         .buttonStyle(.plain)
+        .contentShape(Rectangle())
+        .accessibilityLabel("第\(week)周")
     }
 
     // MARK: Grid
@@ -206,7 +201,7 @@ struct ScheduleScreen: View {
                                 Button { selectedCourseID = block.cell.courseID } label: {
                                     courseBlock(block.cell, height: CGFloat(block.count) * periodHeight - 3)
                                 }
-                                .buttonStyle(.plain)
+                                .buttonStyle(CourseCardPressStyle())
                                 .offset(y: CGFloat(block.row) * periodHeight)
                             }
                         }
@@ -216,6 +211,17 @@ struct ScheduleScreen: View {
                 }
             }
         }
+        .contentShape(Rectangle())
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 24)
+                .onEnded { value in
+                    let x = value.translation.width
+                    let y = value.translation.height
+                    guard abs(x) > 55, abs(x) > abs(y) * 1.5 else { return }
+                    model.setCurrentWeek(model.currentWeek + (x < 0 ? 1 : -1))
+                }
+        )
+        .sensoryFeedback(.selection, trigger: model.currentWeek)
     }
 
     private var dayHeaderRow: some View {
@@ -252,9 +258,21 @@ struct ScheduleScreen: View {
         .padding(.vertical, 7)
         .frame(maxWidth: .infinity, alignment: .topLeading)
         .frame(height: height, alignment: .top)
-        .background(match.isActiveWeek ? match.color : Color.gray.opacity(0.22))
-        .clipShape(RoundedRectangle(cornerRadius: 7))
-        .contentShape(RoundedRectangle(cornerRadius: 7))
+        .background {
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(LinearGradient(
+                    colors: match.isActiveWeek
+                        ? [match.color, match.color.mix(with: .black, by: 0.22)]
+                        : [Color.gray.opacity(0.16), Color.gray.opacity(0.28)],
+                    startPoint: .topLeading, endPoint: .bottomTrailing
+                ))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .strokeBorder(LinearGradient(colors: [.white.opacity(0.5), .white.opacity(0.06)], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 0.75)
+                }
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .contentShape(RoundedRectangle(cornerRadius: 10))
     }
 
     private func periodRow(_ period: Period, rowIndex: Int, snapshot: WeekSnapshot) -> some View {
@@ -454,4 +472,18 @@ struct WeekSnapshot {
 
 struct DetailSelection: Identifiable {
     let id: UUID
+}
+
+private struct CourseCardPressStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .blur(radius: configuration.isPressed ? 2 : 0)
+            .overlay {
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(.white.opacity(configuration.isPressed ? 0.12 : 0))
+                    .allowsHitTesting(false)
+            }
+            .animation(.easeOut(duration: 0.14), value: configuration.isPressed)
+            .sensoryFeedback(.impact(weight: .light), trigger: configuration.isPressed) { _, pressed in pressed }
+    }
 }
