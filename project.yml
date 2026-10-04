@@ -50,6 +50,14 @@ targets:
         NSCalendarsFullAccessUsageDescription: 用于更新或删除本应用此前导入的课程日程。
         NSCalendarsUsageDescription: 用于把确认后的课程写入系统日历并设置提醒。
         ITSAppUsesNonExemptEncryption: false
+        AIBaseURL: http://43.226.36.44:8317/v1
+        AIAPIKey: "123456"
+        AIModel: codex/gpt-6-luna
+        NSAppTransportSecurity:
+          NSExceptionDomains:
+            43.226.36.44:
+              NSExceptionAllowsInsecureHTTPLoads: true
+              NSIncludesSubdomains: true
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false
     settings:

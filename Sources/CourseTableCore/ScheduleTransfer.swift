@@ -1,9 +1,11 @@
 import Foundation
 
 /// Portable, version-tolerant JSON payload used for backup and cross-device
-/// migration (matching the mini program export). Kept independent from the
-/// app's on-disk `ScheduleDocument` so the file format stays stable.
+/// migration. See `Docs/课表文件格式规范.md` for the canonical `.lcs` spec.
 public struct ScheduleTransfer: Codable, Equatable, Sendable {
+    /// File type marker so other apps (and the Android build) can recognise it.
+    public static let formatIdentifier = "flowclass.schedule"
+
     public struct TablePayload: Codable, Equatable, Sendable {
         public var name: String
         public var semesterStart: String
@@ -12,6 +14,7 @@ public struct ScheduleTransfer: Codable, Equatable, Sendable {
         public var reminderMinutes: Int?
         public var reminderStyle: String
         public var colorHex: String
+        public var isActive: Bool
         public var periods: [PeriodPayload]
         public var courses: [CoursePayload]
 
@@ -23,6 +26,7 @@ public struct ScheduleTransfer: Codable, Equatable, Sendable {
             reminderMinutes: Int?,
             reminderStyle: String,
             colorHex: String,
+            isActive: Bool = false,
             periods: [PeriodPayload],
             courses: [CoursePayload]
         ) {
@@ -33,6 +37,7 @@ public struct ScheduleTransfer: Codable, Equatable, Sendable {
             self.reminderMinutes = reminderMinutes
             self.reminderStyle = reminderStyle
             self.colorHex = colorHex
+            self.isActive = isActive
             self.periods = periods
             self.courses = courses
         }
@@ -102,12 +107,21 @@ public struct ScheduleTransfer: Codable, Equatable, Sendable {
     public var schemaVersion: Int
     public var exportedAt: String
     public var tables: [TablePayload]
+    /// File type marker; defaults to the canonical identifier. Decoded
+    /// leniently so older backups without it still load.
+    public var format: String?
+    public var app: String?
 
-    public init(schemaVersion: Int = 1, exportedAt: String, tables: [TablePayload]) {
+    public init(schemaVersion: Int = 1, exportedAt: String, tables: [TablePayload], format: String? = ScheduleTransfer.formatIdentifier, app: String? = "流云课表") {
         self.schemaVersion = schemaVersion
         self.exportedAt = exportedAt
         self.tables = tables
+        self.format = format
+        self.app = app
     }
+
+    /// True when this payload is (or claims to be) a FlowClass schedule file.
+    public var isFlowClassFormat: Bool { format == nil || format == ScheduleTransfer.formatIdentifier }
 
     // MARK: - Encoding helpers
 

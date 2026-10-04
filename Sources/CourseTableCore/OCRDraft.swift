@@ -47,13 +47,22 @@ public struct OCRBlock: Identifiable, Codable, Equatable, Sendable {
     }
 }
 
-/// One proposed course row produced by the OCR parser, before human review.
+/// One proposed course row produced by OCR / AI parsing, before human review.
+/// Carries enough fields to round-trip into the canonical schedule file.
 public struct OCRDraftCourse: Identifiable, Codable, Equatable, Sendable {
     public let id: UUID
     public var name: String
     public var teacher: String?
     public var location: String?
+    public var notes: String?
+    public var color: String?
     public var weekday: Int
+    public var weeks: [Int]?
+    public var timingMode: String?
+    public var startPeriod: Int?
+    public var endPeriod: Int?
+    public var customStart: String?
+    public var customEnd: String?
     public var inferredWeekExpression: String?
 
     public init(
@@ -61,14 +70,30 @@ public struct OCRDraftCourse: Identifiable, Codable, Equatable, Sendable {
         name: String,
         teacher: String? = nil,
         location: String? = nil,
+        notes: String? = nil,
+        color: String? = nil,
         weekday: Int = 1,
+        weeks: [Int]? = nil,
+        timingMode: String? = nil,
+        startPeriod: Int? = nil,
+        endPeriod: Int? = nil,
+        customStart: String? = nil,
+        customEnd: String? = nil,
         inferredWeekExpression: String? = nil
     ) {
         self.id = id
         self.name = name
         self.teacher = teacher
         self.location = location
+        self.notes = notes
+        self.color = color
         self.weekday = weekday
+        self.weeks = weeks
+        self.timingMode = timingMode
+        self.startPeriod = startPeriod
+        self.endPeriod = endPeriod
+        self.customStart = customStart
+        self.customEnd = customEnd
         self.inferredWeekExpression = inferredWeekExpression
     }
 }
