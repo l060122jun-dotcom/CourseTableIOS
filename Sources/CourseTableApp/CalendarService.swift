@@ -69,14 +69,22 @@ final class CalendarService {
             occurrences.append(contentsOf: try CalendarOccurrenceFactory.makeOccurrences(course: course, rule: rule, periods: periods))
         }
 
-        let plan = CalendarSyncPlanner.plan(occurrences: occurrences, existing: existingRecords)
-        var byKey = Dictionary(existingRecords.map { ($0.occurrenceKey, $0) }, uniquingKeysWith: { first, _ in first })
+        // Scope the sync to THIS course only. `occurrenceKey` begins with the
+        // course id, so records belonging to other courses must be carried
+        // through untouched — otherwise each per-course pass would see them as
+        // stale and delete the events a previous pass just created.
+        let coursePrefix = course.id.uuidString + "|"
+        let mine = existingRecords.filter { $0.occurrenceKey.hasPrefix(coursePrefix) }
+        let others = existingRecords.filter { !$0.occurrenceKey.hasPrefix(coursePrefix) }
+
+        let plan = CalendarSyncPlanner.plan(occurrences: occurrences, existing: mine)
+        var byKey = Dictionary(mine.map { ($0.occurrenceKey, $0) }, uniquingKeysWith: { first, _ in first })
         var created = 0
         var updated = 0
         var newRecords: [CalendarExportRecord] = []
 
         for occurrence in plan.toCreate + plan.toUpdate {
-            let isUpdate = !plan.toCreate.contains(occurrence)
+            let isUpdate = byKey[occurrence.occurrenceKey] != nil
             let existingEventID = byKey[occurrence.occurrenceKey]?.eventIdentifier
             let event = try eventFor(occurrence, course: course, table: table, existingEventID: existingEventID, store: store, destination: destination)
             try store.save(event, span: .thisEvent, commit: false)
@@ -93,7 +101,7 @@ final class CalendarService {
             newRecords.append(record)
         }
 
-        // Remove stale events that this app created but are no longer scheduled.
+        // Remove stale events that this app created for THIS course only.
         for record in plan.toDeleteRecords {
             if let identifier = record.eventIdentifier, let event = store.event(withIdentifier: identifier) {
                 try? store.remove(event, span: .thisEvent, commit: false)
@@ -107,7 +115,7 @@ final class CalendarService {
             created: created,
             updated: updated,
             skipped: plan.toSkip.count,
-            allRecords: Array(byKey.values),
+            allRecords: others + Array(byKey.values),
             records: newRecords
         )
     }
