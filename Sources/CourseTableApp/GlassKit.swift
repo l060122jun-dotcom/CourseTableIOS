@@ -2,29 +2,17 @@ import SwiftUI
 
 // MARK: - Liquid Glass design system
 //
-// A small, dependency-free design language shared by every screen:
-//   * `GlassBackground`  – atmospheric layered backdrop (blurred color blobs) that
-//                          the glass elements refract.
-//   * `.liuyunGlass`     – Liquid Glass on iOS 26, an `ultraThinMaterial` +
-//                          gradient + hairline stroke everywhere else.
-//   * `DropIndicator`    – a morphing "water drop" capsule used by selectors.
-//   * `GlassCard`        – a layered, translucent card container.
-//
-// Reference: Apple "Applying Liquid Glass to custom views" (WWDC25) and the
-// widely-used backport pattern from netanel.io / conorluddy.
+// Performance notes (why this file looks the way it does):
+//   * The backdrop is a SINGLE static `MeshGradient` — one GPU draw call, no
+//     per-frame work. Any animated backdrop forces every glass element on top
+//     to re-sample it each frame, which is the main source of jank.
+//   * Glass cards use one material + one gradient + one hairline + one soft
+//     shadow. Shadows and stacked overlays are the expensive part, so they are
+//     kept minimal.
 
 enum GlassPalette {
-    /// Neutral glass surface used for cards, sheets and chips.
     static let surface = Color.white
-    /// Accent used for the primary call to action.
     static let accent = Color(red: 0.05, green: 0.47, blue: 1.0)
-    /// Atmospheric tints behind the content plane.
-    static let aurora: [Color] = [
-        Color(red: 0.45, green: 0.58, blue: 1.00),
-        Color(red: 0.78, green: 0.51, blue: 1.00),
-        Color(red: 0.40, green: 0.90, blue: 0.94),
-        Color(red: 0.98, green: 0.66, blue: 0.86)
-    ]
 
     static func color(fromHex hex: String) -> Color {
         var value = hex.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -72,11 +60,7 @@ extension View {
     @ViewBuilder
     func liuyunGlass<S: InsettableShape>(_ style: GlassStyle = .regular, in shape: S = Capsule(), stroke: Bool = true) -> some View {
         if #available(iOS 26.0, *) {
-            if style.isInteractive {
-                self.glassEffect(style.native, in: shape)
-            } else {
-                self.glassEffect(style.native, in: shape)
-            }
+            self.glassEffect(style.native, in: shape)
         } else {
             self.background(
                 shape
@@ -97,62 +81,41 @@ extension View {
     }
 }
 
-// MARK: - Atmospheric backdrop
+// MARK: - Atmospheric backdrop (static, one draw call)
 
-/// A layered backdrop: a soft gradient plus slow-moving colour blobs. The
-/// blur gives the glass something meaningful to refract, which is what sells
-/// the "liquid" look.
+/// A calm, static pastel mesh. Rendered once and cached by the compositor, so
+/// glass elements above it never have to re-sample a moving backdrop.
 struct GlassBackground: View {
-    @State private var animate = false
-
     var body: some View {
-        ZStack {
-            LinearGradient(
-                colors: [
-                    Color(red: 0.93, green: 0.95, blue: 1.0),
-                    Color(red: 0.97, green: 0.94, blue: 1.0),
-                    Color(red: 0.92, green: 0.97, blue: 0.99)
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            .ignoresSafeArea()
-
-            GeometryReader { proxy in
-                let size = proxy.size
-                ZStack {
-                    blob(GlassPalette.aurora[0], size: size.width * 0.85, offset: offset(x: -0.28, y: -0.30, size: size))
-                    blob(GlassPalette.aurora[1], size: size.width * 0.75, offset: offset(x: 0.34, y: -0.12, size: size))
-                    blob(GlassPalette.aurora[2], size: size.width * 0.80, offset: offset(x: -0.10, y: 0.38, size: size))
-                    blob(GlassPalette.aurora[3], size: size.width * 0.62, offset: offset(x: 0.30, y: 0.42, size: size))
-                }
-                .blur(radius: 60)
-                .opacity(0.55)
-                .offset(y: animate ? 12 : -12)
-                .animation(.easeInOut(duration: 9).repeatForever(autoreverses: true), value: animate)
-            }
-            .ignoresSafeArea()
-            .allowsHitTesting(false)
-        }
-        .onAppear { animate = true }
-    }
-
-    private func blob(_ color: Color, size: CGFloat, offset: CGPoint) -> some View {
-        Circle()
-            .fill(color)
-            .frame(width: size, height: size)
-            .position(offset)
-    }
-
-    private func offset(x: CGFloat, y: CGFloat, size: CGSize) -> CGPoint {
-        CGPoint(x: size.width * (0.5 + x), y: size.height * (0.5 + y))
+        MeshGradient(
+            width: 3,
+            height: 3,
+            points: [
+                .init(0.0, 0.0), .init(0.5, 0.0), .init(1.0, 0.0),
+                .init(0.0, 0.5), .init(0.48, 0.46), .init(1.0, 0.5),
+                .init(0.0, 1.0), .init(0.5, 1.0), .init(1.0, 1.0)
+            ],
+            colors: [
+                Color(red: 0.91, green: 0.93, blue: 1.00),
+                Color(red: 0.86, green: 0.89, blue: 1.00),
+                Color(red: 0.93, green: 0.89, blue: 1.00),
+                Color(red: 0.84, green: 0.91, blue: 1.00),
+                Color(red: 0.93, green: 0.88, blue: 1.00),
+                Color(red: 0.98, green: 0.91, blue: 0.97),
+                Color(red: 0.87, green: 0.97, blue: 0.99),
+                Color(red: 0.91, green: 0.95, blue: 1.00),
+                Color(red: 0.89, green: 0.96, blue: 0.99)
+            ]
+        )
+        .ignoresSafeArea()
+        .allowsHitTesting(false)
     }
 }
 
 // MARK: - Glass card
 
-/// A layered translucent container: an outer hairlight, an inner glass fill and
-/// an optional accent glow. Mimics Apple's multi-layer sheet material.
+/// A layered translucent container: an inner glass fill, a soft gradient and a
+/// single hairline. Kept deliberately light — no stacked shadows.
 struct GlassCard<Content: View>: View {
     var cornerRadius: CGFloat = 22
     var tint: Color? = nil
@@ -169,63 +132,28 @@ struct GlassCard<Content: View>: View {
                         RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                             .fill(
                                 LinearGradient(
-                                    colors: [.white.opacity(0.55), .white.opacity(0.08)],
+                                    colors: [.white.opacity(0.5), .white.opacity(0.06)],
                                     startPoint: .topLeading,
                                     endPoint: .bottomTrailing
                                 )
                             )
                     )
-                    .overlay(alignment: .top) {
-                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                            .fill(tint?.opacity(0.16) ?? Color.clear)
+                    .overlay {
+                        if let tint {
+                            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                                .fill(tint.opacity(0.14))
+                        }
                     }
             )
             .overlay(
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                     .strokeBorder(.white.opacity(0.4), lineWidth: 0.75)
             )
-            .shadow(color: .black.opacity(0.10), radius: 18, x: 0, y: 10)
+            .shadow(color: .black.opacity(0.08), radius: 12, x: 0, y: 6)
     }
 }
 
-// MARK: - Water-drop indicator
-
-/// A morphing "water drop" pill that slides behind the selected item. Uses
-/// `matchedGeometryEffect` so it stretches like a droplet when moving between
-/// items of different widths, then settles into a rounded blob.
-struct DropIndicator<ID: Hashable>: ViewModifier {
-    let id: ID
-    let namespace: Namespace.ID
-    var tint: Color = GlassPalette.accent
-
-    func body(content: Content) -> some View {
-        content
-            .background(
-                Capsule(style: .continuous)
-                    .fill(
-                        LinearGradient(
-                            colors: [tint.opacity(0.92), tint.opacity(0.66)],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                    )
-                    .overlay(
-                        Capsule(style: .continuous)
-                            .strokeBorder(.white.opacity(0.5), lineWidth: 0.75)
-                    )
-                    .shadow(color: tint.opacity(0.35), radius: 10, x: 0, y: 4)
-                    .matchedGeometryEffect(id: id, in: namespace)
-            )
-    }
-}
-
-extension View {
-    func dropIndicator<ID: Hashable>(_ id: ID, in namespace: Namespace.ID, tint: Color = GlassPalette.accent) -> some View {
-        modifier(DropIndicator(id: id, namespace: namespace, tint: tint))
-    }
-}
-
-// MARK: - Reusable glass button
+// MARK: - Glass action button
 
 struct GlassActionButton: View {
     var title: String

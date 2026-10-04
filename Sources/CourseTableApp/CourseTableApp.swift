@@ -27,6 +27,8 @@ final class AppModel: ObservableObject {
     @Published var storageMessage: String?
 
     private let demoMode: Bool
+    private let saveQueue = DispatchQueue(label: "com.codex.coursetable.save", qos: .utility)
+    private var pendingSave: DispatchWorkItem?
 
     init() {
         let arguments = ProcessInfo.processInfo.arguments
@@ -65,8 +67,20 @@ final class AppModel: ObservableObject {
 
     private func persist() {
         guard !demoMode, !storageLocked else { return }
-        do { try ScheduleStore.save(document) }
-        catch { storageMessage = "保存课程失败：\(error.localizedDescription)" }
+        // Debounce so rapid changes (e.g. scrubbing weeks) don't hammer the disk,
+        // and encode/write off the main thread so UI frames never block.
+        let snapshot = document
+        pendingSave?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            do {
+                let data = try JSONEncoder().encode(snapshot)
+                try ScheduleStore.write(data)
+            } catch {
+                DispatchQueue.main.async { self?.storageMessage = "保存课程失败：\(error.localizedDescription)" }
+            }
+        }
+        pendingSave = work
+        saveQueue.asyncAfter(deadline: .now() + 0.35, execute: work)
     }
 
     private func mutate(_ change: (inout ScheduleDocument) -> Void) {

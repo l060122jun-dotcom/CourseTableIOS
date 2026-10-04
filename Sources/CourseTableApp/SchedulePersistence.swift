@@ -182,12 +182,16 @@ enum ScheduleStore {
     }
 
     static func save(_ document: ScheduleDocument) throws {
+        try write(try JSONEncoder().encode(document))
+    }
+
+    /// Writes raw encoded data. Callable from a background queue.
+    static func write(_ data: Data) throws {
         try FileManager.default.createDirectory(
             at: directoryURL,
             withIntermediateDirectories: true,
             attributes: [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication]
         )
-        let data = try JSONEncoder().encode(document)
         try data.write(to: fileURL, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
     }
 

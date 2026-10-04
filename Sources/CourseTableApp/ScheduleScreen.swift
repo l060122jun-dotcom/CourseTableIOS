@@ -3,6 +3,10 @@ import CourseTableCore
 
 /// Weekly timetable. A layered layout: a glass header (table name + week),
 /// a horizontal week selector with a water-drop indicator, then the grid.
+///
+/// Performance: the grid and the "which weeks have class" set are computed in
+/// ONE pass over the courses per body evaluation (see `WeekSnapshot`), instead
+/// of re-scanning every course for every cell and every week chip.
 struct ScheduleScreen: View {
     @EnvironmentObject private var model: AppModel
     @Namespace private var weekNamespace
@@ -21,11 +25,19 @@ struct ScheduleScreen: View {
     private let dayNames = ["一", "二", "三", "四", "五", "六", "日"]
 
     var body: some View {
+        let snapshot = WeekSnapshot(
+            courses: model.courses,
+            periods: model.periods,
+            weekdayCount: model.weekdayCount,
+            currentWeek: model.currentWeek,
+            showOutside: model.table.showCoursesOutsideSelectedWeek
+        )
+
         ScrollView(showsIndicators: false) {
             VStack(spacing: 16) {
                 header
-                weekSelector
-                grid
+                weekSelector(activeWeeks: snapshot.activeWeeks)
+                grid(snapshot: snapshot)
                 customSection
             }
             .padding(.horizontal, 16)
@@ -58,7 +70,6 @@ struct ScheduleScreen: View {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(model.table.name)
                             .font(.system(size: 26, weight: .bold, design: .rounded))
-                            .foregroundStyle(.primary)
                         Text(weekSubtitle)
                             .font(.system(size: 13, weight: .medium))
                             .foregroundStyle(.secondary)
@@ -69,7 +80,7 @@ struct ScheduleScreen: View {
                             .font(.system(size: 16, weight: .semibold))
                             .foregroundStyle(GlassPalette.accent)
                             .padding(10)
-                            .liuyunGlass(.tinted(GlassPalette.accent.opacity(0.5)), in: Circle())
+                            .background(Circle().fill(GlassPalette.accent.opacity(0.14)))
                     }
                     .buttonStyle(.plain)
                 }
@@ -80,7 +91,7 @@ struct ScheduleScreen: View {
                         showingEditor = true
                     }
                     GlassActionButton(title: "回到本周", systemImage: "arrow.uturn.backward", tint: weekdayTodayTint) {
-                        withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) { model.resetWeekToToday() }
+                        withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) { model.resetWeekToToday() }
                     }
                 }
             }
@@ -98,12 +109,12 @@ struct ScheduleScreen: View {
 
     // MARK: Week selector
 
-    private var weekSelector: some View {
+    private func weekSelector(activeWeeks: Set<Int>) -> some View {
         ScrollViewReader { proxy in
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
                     ForEach(1...model.table.totalWeeks, id: \.self) { week in
-                        weekChip(week)
+                        weekChip(week, hasCourses: activeWeeks.contains(week))
                             .id(week)
                     }
                 }
@@ -112,23 +123,22 @@ struct ScheduleScreen: View {
             }
             .onAppear { proxy.scrollTo(model.currentWeek, anchor: .center) }
             .onChange(of: model.currentWeek) { _, newValue in
-                withAnimation { proxy.scrollTo(newValue, anchor: .center) }
+                proxy.scrollTo(newValue, anchor: .center)
             }
         }
     }
 
-    private func weekChip(_ week: Int) -> some View {
+    private func weekChip(_ week: Int, hasCourses: Bool) -> some View {
         let isSelected = week == model.currentWeek
-        let isActiveCourseWeek = !coursesIn(week: week).isEmpty
         return Button {
-            withAnimation(.spring(response: 0.42, dampingFraction: 0.74)) {
+            withAnimation(.spring(response: 0.42, dampingFraction: 0.78)) {
                 model.setCurrentWeek(week)
             }
         } label: {
             VStack(spacing: 3) {
                 Text("\(week)").font(.system(size: 16, weight: .bold, design: .rounded))
                 Circle()
-                    .fill(isActiveCourseWeek ? (isSelected ? Color.white : GlassPalette.accent) : Color.clear)
+                    .fill(hasCourses ? (isSelected ? Color.white : GlassPalette.accent) : Color.clear)
                     .frame(width: 5, height: 5)
             }
             .foregroundStyle(isSelected ? Color.white : Color.primary.opacity(0.7))
@@ -137,12 +147,14 @@ struct ScheduleScreen: View {
             .background {
                 if isSelected {
                     Capsule(style: .continuous)
-                        .fill(LinearGradient(colors: [GlassPalette.accent, GlassPalette.accent.opacity(0.7)], startPoint: .top, endPoint: .bottom))
+                        .fill(GlassPalette.accent.gradient)
                         .overlay(Capsule().strokeBorder(.white.opacity(0.35), lineWidth: 0.75))
-                        .shadow(color: GlassPalette.accent.opacity(0.35), radius: 10, y: 4)
+                        .shadow(color: GlassPalette.accent.opacity(0.3), radius: 8, y: 3)
                         .matchedGeometryEffect(id: "weekDrop", in: weekNamespace)
                 } else {
-                    Capsule(style: .continuous).fill(.ultraThinMaterial)
+                    // Solid translucent fill instead of a live material blur:
+                    // 17 materials in a scrolling row is a large GPU cost.
+                    Capsule(style: .continuous).fill(Color.white.opacity(0.28))
                 }
             }
         }
@@ -151,12 +163,12 @@ struct ScheduleScreen: View {
 
     // MARK: Grid
 
-    private var grid: some View {
+    private func grid(snapshot: WeekSnapshot) -> some View {
         GlassCard(cornerRadius: 24, padding: 12) {
             VStack(spacing: 6) {
                 dayHeaderRow
-                ForEach(model.periods) { period in
-                    periodRow(period)
+                ForEach(Array(model.periods.enumerated()), id: \.element.id) { index, period in
+                    periodRow(period, rowIndex: index, snapshot: snapshot)
                 }
             }
         }
@@ -164,7 +176,7 @@ struct ScheduleScreen: View {
 
     private var dayHeaderRow: some View {
         HStack(spacing: 6) {
-            Text("").frame(width: 42)
+            Color.clear.frame(width: 42, height: 1)
             ForEach(0..<model.weekdayCount, id: \.self) { index in
                 Text("周\(dayNames[index])")
                     .font(.system(size: 12, weight: .semibold))
@@ -174,7 +186,7 @@ struct ScheduleScreen: View {
         }
     }
 
-    private func periodRow(_ period: Period) -> some View {
+    private func periodRow(_ period: Period, rowIndex: Int, snapshot: WeekSnapshot) -> some View {
         HStack(spacing: 6) {
             VStack(spacing: 1) {
                 Text("\(period.index)").font(.system(size: 13, weight: .bold, design: .rounded))
@@ -184,56 +196,51 @@ struct ScheduleScreen: View {
             }
             .frame(width: 42)
 
-            ForEach(1...model.weekdayCount, id: \.self) { weekday in
-                cell(weekday: weekday, period: period)
-            }
-        }
-    }
-
-    private func cell(weekday: Int, period: Period) -> some View {
-        let match = courseCell(weekday: weekday, period: period)
-        return Group {
-            if let match {
-                Button {
-                    selectedCourseID = match.stored.course.id
-                } label: {
-                    cellContent(match)
-                }
-                .buttonStyle(.plain)
-            } else {
-                cellContent(nil)
+            ForEach(0..<model.weekdayCount, id: \.self) { column in
+                cell(snapshot.cell(row: rowIndex, column: column))
             }
         }
     }
 
     @ViewBuilder
-    private func cellContent(_ match: CellMatch?) -> some View {
-        let isCurrentWeekCourse = match?.isActiveWeek ?? true
-        RoundedRectangle(cornerRadius: 12, style: .continuous)
-            .fill(match == nil ? AnyShapeStyle(Color.primary.opacity(0.04)) : AnyShapeStyle(tint(for: match!).gradient))
-            .overlay(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(.white.opacity(match == nil ? 0 : 0.35), lineWidth: 0.75)
-            )
-            .overlay(alignment: .topLeading) {
-                if let match {
+    private func cell(_ match: WeekSnapshot.Cell?) -> some View {
+        if let match {
+            Button {
+                selectedCourseID = match.courseID
+            } label: {
+                cellContent(match)
+            }
+            .buttonStyle(.plain)
+        } else {
+            cellContent(nil)
+        }
+    }
+
+    @ViewBuilder
+    private func cellContent(_ match: WeekSnapshot.Cell?) -> some View {
+        let shape = RoundedRectangle(cornerRadius: 12, style: .continuous)
+        if let match {
+            shape
+                .fill(match.color.gradient)
+                .overlay(shape.strokeBorder(.white.opacity(0.35), lineWidth: 0.75))
+                .overlay(alignment: .topLeading) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(match.stored.course.name)
-                            .font(.system(size: 10, weight: .semibold))
-                            .lineLimit(3)
-                        if let location = match.stored.course.location, !location.isEmpty {
-                            Text(location).font(.system(size: 8)).opacity(0.8).lineLimit(1)
+                        Text(match.name).font(.system(size: 10, weight: .semibold)).lineLimit(3)
+                        if let location = match.location {
+                            Text(location).font(.system(size: 8)).opacity(0.85).lineLimit(1)
                         }
                     }
                     .foregroundStyle(.white)
                     .padding(5)
                 }
-            }
-            .frame(maxWidth: .infinity, minHeight: 62)
-            .opacity(isCurrentWeekCourse ? 1 : 0.35)
+                .frame(maxWidth: .infinity, minHeight: 62)
+                .opacity(match.isActiveWeek ? 1 : 0.35)
+        } else {
+            shape
+                .fill(Color.primary.opacity(0.04))
+                .frame(maxWidth: .infinity, minHeight: 62)
+        }
     }
-
-    private func tint(for match: CellMatch) -> Color { GlassPalette.color(fromHex: match.stored.course.colorHex) }
 
     // MARK: Custom-time courses
 
@@ -261,7 +268,11 @@ struct ScheduleScreen: View {
                     }
                     .buttonStyle(.plain)
                     .padding(14)
-                    .liuyunGlass(.regular, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                    .background(
+                        RoundedRectangle(cornerRadius: 18, style: .continuous)
+                            .fill(.ultraThinMaterial)
+                            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(.white.opacity(0.4), lineWidth: 0.75))
+                    )
                 }
             }
         }
@@ -273,44 +284,68 @@ struct ScheduleScreen: View {
         let end = Period.text(from: rule.customEndMinute ?? 0)
         return "周\(dayNames[rule.weekday - 1]) · \(start)–\(end)"
     }
+}
 
-    // MARK: Lookup
+// MARK: - Weekly snapshot (precomputed once per body)
 
-    private struct CellMatch {
-        let stored: StoredCourse
-        let rule: MeetingRule
+/// Flattened, ready-to-render view of the active week. Built in a single pass
+/// so the grid never rescans the course list per cell.
+struct WeekSnapshot {
+    struct Cell {
+        let courseID: UUID
+        let name: String
+        let location: String?
+        let color: Color
         let isActiveWeek: Bool
     }
 
-    private func courseCell(weekday: Int, period: Period) -> CellMatch? {
-        let week = model.currentWeek
-        for stored in model.courses {
+    /// rows[periodRow][column]; nil means an empty cell.
+    private let rows: [[Cell?]]
+    let activeWeeks: Set<Int>
+
+    init(courses: [StoredCourse], periods: [Period], weekdayCount: Int, currentWeek: Int, showOutside: Bool) {
+        var rows = Array(repeating: Array<Cell?>(repeating: nil, count: weekdayCount), count: periods.count)
+        var activeWeeks = Set<Int>()
+        var periodRowIndex: [Int: Int] = [:]
+        for (row, period) in periods.enumerated() { periodRowIndex[period.index] = row }
+
+        for stored in courses {
+            let color = GlassPalette.color(fromHex: stored.course.colorHex)
+            let location = (stored.course.location?.isEmpty == false) ? stored.course.location : nil
             for rule in stored.rules where rule.timingMode == .period {
-                guard rule.weekday == weekday,
-                      let start = rule.startPeriod, let end = rule.endPeriod,
-                      period.index >= start, period.index <= end else { continue }
-                // Prefer a course that is active this week; otherwise show dimmed.
-                if rule.weekSet.contains(week) {
-                    return CellMatch(stored: stored, rule: rule, isActiveWeek: true)
+                guard let start = rule.startPeriod, let end = rule.endPeriod else { continue }
+                let column = rule.weekday - 1
+                guard column >= 0, column < weekdayCount else { continue }
+                for week in rule.weekSet { activeWeeks.insert(week) }
+
+                let isActive = rule.weekSet.contains(currentWeek)
+                guard isActive || showOutside else { continue }
+                guard start <= end else { continue }
+                for index in start...end {
+                    guard let row = periodRowIndex[index] else { continue }
+                    let existing = rows[row][column]
+                    // Prefer an active-week course over a dimmed one.
+                    if existing == nil || (isActive && existing?.isActiveWeek == false) {
+                        rows[row][column] = Cell(
+                            courseID: stored.course.id,
+                            name: stored.course.name,
+                            location: location,
+                            color: color,
+                            isActiveWeek: isActive
+                        )
+                    }
                 }
             }
         }
-        guard model.table.showCoursesOutsideSelectedWeek else { return nil }
-        for stored in model.courses {
-            for rule in stored.rules where rule.timingMode == .period {
-                guard rule.weekday == weekday,
-                      let start = rule.startPeriod, let end = rule.endPeriod,
-                      period.index >= start, period.index <= end else { continue }
-                return CellMatch(stored: stored, rule: rule, isActiveWeek: false)
-            }
-        }
-        return nil
+        self.rows = rows
+        self.activeWeeks = activeWeeks
     }
 
-    private func coursesIn(week: Int) -> [StoredCourse] {
-        model.courses.filter { stored in
-            stored.rules.contains { $0.weekSet.contains(week) }
-        }
+    func cell(row: Int, column: Int) -> Cell? {
+        guard rows.indices.contains(row) else { return nil }
+        let columns = rows[row]
+        guard columns.indices.contains(column) else { return nil }
+        return columns[column]
     }
 }
 
