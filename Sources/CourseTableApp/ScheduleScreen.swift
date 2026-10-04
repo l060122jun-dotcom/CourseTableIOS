@@ -42,7 +42,7 @@ struct ScheduleScreen: View {
                 grid(snapshot: snapshot)
                 customSection
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, 6)
             .padding(.top, 8)
             .padding(.bottom, 120)
         }
@@ -171,20 +171,56 @@ struct ScheduleScreen: View {
 
     // MARK: Grid
 
+    private let periodHeight: CGFloat = 94
+
     private func grid(snapshot: WeekSnapshot) -> some View {
-        GlassCard(cornerRadius: 24, padding: 12) {
+        GlassCard(cornerRadius: 18, padding: 4) {
             VStack(spacing: 6) {
                 dayHeaderRow
-                ForEach(Array(model.periods.enumerated()), id: \.element.id) { index, period in
-                    periodRow(period, rowIndex: index, snapshot: snapshot)
+                HStack(alignment: .top, spacing: 3) {
+                    VStack(spacing: 0) {
+                        ForEach(model.periods) { period in
+                            VStack(spacing: 9) {
+                                Text("\(period.index)")
+                                    .font(.system(size: 19, weight: .bold, design: .rounded))
+                                Text(Period.text(from: period.startMinuteOfDay))
+                                Text(Period.text(from: period.endMinuteOfDay))
+                            }
+                            .font(.system(size: 9))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 34, height: periodHeight)
+                        }
+                    }
+                    ForEach(0..<model.weekdayCount, id: \.self) { column in
+                        ZStack(alignment: .top) {
+                            VStack(spacing: 0) {
+                                ForEach(model.periods) { _ in
+                                    Rectangle().fill(Color.primary.opacity(0.025))
+                                        .overlay(alignment: .bottom) {
+                                            Rectangle().fill(Color.primary.opacity(0.06)).frame(height: 0.5)
+                                        }
+                                        .frame(height: periodHeight)
+                                }
+                            }
+                            ForEach(snapshot.blocks(column: column), id: \.row) { block in
+                                Button { selectedCourseID = block.cell.courseID } label: {
+                                    courseBlock(block.cell, height: CGFloat(block.count) * periodHeight - 3)
+                                }
+                                .buttonStyle(.plain)
+                                .offset(y: CGFloat(block.row) * periodHeight)
+                            }
+                        }
+                        .frame(maxWidth: .infinity)
+                        .frame(height: CGFloat(model.periods.count) * periodHeight)
+                    }
                 }
             }
         }
     }
 
     private var dayHeaderRow: some View {
-        HStack(spacing: 6) {
-            Color.clear.frame(width: 42, height: 1)
+        HStack(spacing: 3) {
+            Color.clear.frame(width: 34, height: 1)
             ForEach(0..<model.weekdayCount, id: \.self) { index in
                 Text("周\(dayNames[index])")
                     .font(.system(size: 12, weight: .semibold))
@@ -192,6 +228,33 @@ struct ScheduleScreen: View {
                     .frame(maxWidth: .infinity)
             }
         }
+    }
+
+    private func courseBlock(_ match: WeekSnapshot.Cell, height: CGFloat) -> some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Text(match.name)
+                .font(.system(size: 12, weight: .bold))
+                .fixedSize(horizontal: false, vertical: true)
+            if let location = match.location {
+                Text(location).font(.system(size: 10))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if let teacher = match.teacher, !teacher.isEmpty {
+                Text(teacher).font(.system(size: 10))
+            }
+            if !match.isActiveWeek {
+                Text("非本周").font(.system(size: 10)).opacity(0.7)
+            }
+            Spacer(minLength: 0)
+        }
+        .foregroundStyle(match.isActiveWeek ? Color.white : Color.primary.opacity(0.7))
+        .padding(.horizontal, 4)
+        .padding(.vertical, 7)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .frame(height: height, alignment: .top)
+        .background(match.isActiveWeek ? match.color : Color.gray.opacity(0.22))
+        .clipShape(RoundedRectangle(cornerRadius: 7))
+        .contentShape(RoundedRectangle(cornerRadius: 7))
     }
 
     private func periodRow(_ period: Period, rowIndex: Int, snapshot: WeekSnapshot) -> some View {
@@ -300,9 +363,11 @@ struct ScheduleScreen: View {
 /// so the grid never rescans the course list per cell.
 struct WeekSnapshot {
     struct Cell {
+        let ruleID: UUID
         let courseID: UUID
         let name: String
         let location: String?
+        let teacher: String?
         let color: Color
         let isActiveWeek: Bool
     }
@@ -335,9 +400,11 @@ struct WeekSnapshot {
                     // Prefer an active-week course over a dimmed one.
                     if existing == nil || (isActive && existing?.isActiveWeek == false) {
                         rows[row][column] = Cell(
+                            ruleID: rule.id,
                             courseID: stored.course.id,
                             name: stored.course.name,
                             location: location,
+                            teacher: stored.course.teacher,
                             color: color,
                             isActiveWeek: isActive
                         )
@@ -354,6 +421,32 @@ struct WeekSnapshot {
         let columns = rows[row]
         guard columns.indices.contains(column) else { return nil }
         return columns[column]
+    }
+
+    struct Block {
+        let row: Int
+        let count: Int
+        let cell: Cell
+    }
+
+    func blocks(column: Int) -> [Block] {
+        var result: [Block] = []
+        var row = 0
+        while row < rows.count {
+            guard let current = cell(row: row, column: column) else {
+                row += 1
+                continue
+            }
+            var end = row + 1
+            while end < rows.count,
+                  let next = cell(row: end, column: column),
+                  next.ruleID == current.ruleID {
+                end += 1
+            }
+            result.append(Block(row: row, count: end - row, cell: current))
+            row = end
+        }
+        return result
     }
 }
 
