@@ -117,6 +117,13 @@ enum AIResultParser {
             if let data = dict["data"] as? [String: Any], let tables = data["tables"] as? [[String: Any]] { return tables }
             if let data = dict["data"] as? [[String: Any]] { return data }
             if let result = dict["result"] as? [String: Any] { return [result] }
+            // Nested wrappers some models add: {"flowclass":{"schedule":{...}}}
+            for wrapper in ["flowclass", "schedule", "timetable", "courseTable", "result", "data"] {
+                if let nested = dict[wrapper] as? [String: Any] {
+                    let inner = tableCandidates(from: nested)
+                    if !inner.isEmpty { return inner }
+                }
+            }
             return [dict]
         }
         if let array = root as? [[String: Any]] {

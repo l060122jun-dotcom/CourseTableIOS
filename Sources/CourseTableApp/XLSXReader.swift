@@ -19,16 +19,106 @@ enum XLSXReader {
         }
     }
 
+    /// Returns a ready-to-send text description of the timetable. When the
+    /// sheet looks like a weekly grid (weekday header row + period column) it
+    /// emits unambiguous "<n>周 第X-Y节 | 内容" lines; otherwise it falls back
+    /// to the raw tab-separated grid.
     static func read(data: Data) throws -> String {
+        let rows = try readGrid(data: data)
+        guard !rows.isEmpty else { throw XLSXError.unreadable }
+        return structuredText(from: rows) ?? render(rows)
+    }
+
+    /// Raw grid (rows × columns) with empty-cell positions preserved.
+    static func readGrid(data: Data) throws -> [[String]] {
         guard let zip = ZipArchive(data: data) else { throw XLSXError.notZip }
         let shared = zip.entry("xl/sharedStrings.xml").flatMap(parseSharedStrings) ?? []
         let sheetKey = zip.entries.keys.first(where: { $0 == "xl/worksheets/sheet1.xml" })
             ?? zip.entries.keys.filter { $0.hasPrefix("xl/worksheets/sheet") && $0.hasSuffix(".xml") }.sorted().first
         guard let key = sheetKey, let sheetData = zip.entry(key) else { throw XLSXError.noSheet }
+        return parseSheet(sheetData, sharedStrings: shared)
+    }
 
-        let rows = parseSheet(sheetData, sharedStrings: shared)
-        guard !rows.isEmpty else { throw XLSXError.unreadable }
-        return render(rows)
+    // MARK: Structured rendering
+
+    private static let dayHeaders = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"]
+    private static let dayAliases: [(String, Int)] = [
+        ("周一", 1), ("星期一", 1), ("礼拜一", 1), ("monday", 1), ("mon", 1),
+        ("周二", 2), ("星期二", 2), ("礼拜二", 2), ("tuesday", 2), ("tue", 2),
+        ("周三", 3), ("星期三", 3), ("礼拜三", 3), ("wednesday", 3), ("wed", 3),
+        ("周四", 4), ("星期四", 4), ("礼拜四", 4), ("thursday", 4), ("thu", 4),
+        ("周五", 5), ("星期五", 5), ("礼拜五", 5), ("friday", 5), ("fri", 5),
+        ("周六", 6), ("星期六", 6), ("礼拜六", 6), ("saturday", 6), ("sat", 6),
+        ("周日", 7), ("周天", 7), ("星期日", 7), ("星期天", 7), ("sunday", 7), ("sun", 7)
+    ]
+
+    /// Detects a weekly grid and renders each cell as "<n>周 第X-Y节 | content".
+    /// Returns nil when the sheet is not a recognisable timetable.
+    static func structuredText(from grid: [[String]]) -> String? {
+        guard !grid.isEmpty else { return nil }
+
+        // 1) Locate the weekday header row and each weekday's column.
+        var dayColumn: [Int: Int] = [:]
+        var headerRowIndex = -1
+        for (rowIndex, row) in grid.enumerated() {
+            var found: [Int: Int] = [:]
+            for (column, cell) in row.enumerated() {
+                let normalized = cell.replacingOccurrences(of: " ", with: "").lowercased()
+                guard !normalized.isEmpty else { continue }
+                for (token, day) in dayAliases where normalized == token || normalized == token + "日" || normalized == token + "天" {
+                    found[day] = column
+                }
+                if dayHeaders.contains(cell.trimmingCharacters(in: .whitespaces)) {
+                    if let day = dayHeaders.firstIndex(of: cell.trimmingCharacters(in: .whitespaces)) { found[day + 1] = column }
+                }
+            }
+            if found.count >= 3 {
+                dayColumn = found
+                headerRowIndex = rowIndex
+                break
+            }
+        }
+        guard headerRowIndex >= 0, !dayColumn.isEmpty else { return nil }
+
+        // 2) Walk the rows below the header; the leftmost non-empty column is
+        //    the period label for that row.
+        var lines: [String] = []
+        let minDayColumn = dayColumn.values.min() ?? 0
+        for row in grid[(headerRowIndex + 1)...] {
+            var periodLabel: String?
+            for column in 0..<minDayColumn {
+                if column < row.count, !row[column].trimmingCharacters(in: .whitespaces).isEmpty {
+                    periodLabel = row[column].trimmingCharacters(in: .whitespaces)
+                    break
+                }
+            }
+            guard let periodLabel, let period = parsePeriods(periodLabel) else { continue }
+            for (day, column) in dayColumn.sorted(by: { $0.key < $1.key }) {
+                guard column < row.count else { continue }
+                let content = row[column].trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !content.isEmpty else { continue }
+                let flattened = content.replacingOccurrences(of: "\n", with: " ")
+                lines.append("\(day)周 第\(period.0)-\(period.1)节 | \(flattened)")
+            }
+        }
+        return lines.isEmpty ? nil : lines.joined(separator: "\n")
+    }
+
+    /// "第1-2节" / "1-2" / "第3节" → (1,2) / (3,3)
+    static func parsePeriods(_ text: String) -> (Int, Int)? {
+        let ns = text as NSString
+        if let regex = try? NSRegularExpression(pattern: "(\\d+)\\s*[-—~至]\\s*(\\d+)"),
+           let match = regex.firstMatch(in: text, range: NSRange(location: 0, length: ns.length)),
+           let a = Int(ns.substring(with: match.range(at: 1))),
+           let b = Int(ns.substring(with: match.range(at: 2))) {
+            return (min(a, b), max(a, b))
+        }
+        if let regex = try? NSRegularExpression(pattern: "\\d+"),
+           let match = regex.firstMatch(in: text, range: NSRange(location: 0, length: ns.length)),
+           let value = Int(ns.substring(with: match.range)) {
+            return (value, value)
+        }
+        return nil
     }
 
     // MARK: Shared strings
