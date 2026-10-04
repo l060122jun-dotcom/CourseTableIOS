@@ -50,12 +50,12 @@ struct ScheduleScreen: View {
                             weekdayCount: model.weekdayCount,
                             currentWeek: week,
                             showOutside: model.table.showCoursesOutsideSelectedWeek
-                        ))
+                        ), week: week)
                         .tag(week)
                     }
                 }
                 .tabViewStyle(.page(indexDisplayMode: .never))
-                .frame(height: CGFloat(model.periods.count) * periodHeight + 36)
+                .frame(height: CGFloat(model.periods.count) * periodHeight + 58)
                 customSection
             }
             .padding(.horizontal, 6)
@@ -184,10 +184,10 @@ struct ScheduleScreen: View {
 
     private let periodHeight: CGFloat = 94
 
-    private func grid(snapshot: WeekSnapshot) -> some View {
+    private func grid(snapshot: WeekSnapshot, week: Int) -> some View {
         GlassCard(cornerRadius: 18, padding: 4) {
             VStack(spacing: 6) {
-                dayHeaderRow
+                dayHeaderRow(week: week)
                 HStack(alignment: .top, spacing: 3) {
                     VStack(spacing: 0) {
                         ForEach(model.periods) { period in
@@ -230,14 +230,20 @@ struct ScheduleScreen: View {
         .sensoryFeedback(.selection, trigger: model.currentWeek)
     }
 
-    private var dayHeaderRow: some View {
+    private func dayHeaderRow(week: Int) -> some View {
         HStack(spacing: 3) {
             Color.clear.frame(width: 34, height: 1)
             ForEach(0..<model.weekdayCount, id: \.self) { index in
-                Text("周\(dayNames[index])")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity)
+                VStack(spacing: 5) {
+                    Text("周\(dayNames[index])")
+                        .font(.system(size: 12, weight: .semibold))
+                    if let date = SemesterCalendar.date(semesterStart: model.table.semesterStartDate, week: week, weekday: index + 1) {
+                        Text("\(Calendar.current.component(.month, from: date))/\(Calendar.current.component(.day, from: date))")
+                            .font(.system(size: 10, weight: .medium))
+                    }
+                }
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity)
             }
         }
     }
@@ -483,10 +489,16 @@ struct DetailSelection: Identifiable {
 private struct CoursePressButton<Content: View>: View {
     let action: () -> Void
     @ViewBuilder let content: () -> Content
-    @GestureState private var pressed = false
-
     var body: some View {
-        content()
+        Button(action: action) { content() }
+            .buttonStyle(CourseTouchStyle())
+    }
+}
+
+private struct CourseTouchStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        let pressed = configuration.isPressed
+        configuration.label
             .blur(radius: pressed ? 6 : 0)
             .overlay {
                 RoundedRectangle(cornerRadius: 10)
@@ -495,16 +507,8 @@ private struct CoursePressButton<Content: View>: View {
             }
             .clipShape(RoundedRectangle(cornerRadius: 10))
             .contentShape(RoundedRectangle(cornerRadius: 10))
-            .onTapGesture(perform: action)
-            .simultaneousGesture(
-                DragGesture(minimumDistance: 0)
-                    .updating($pressed) { value, state, _ in
-                        state = abs(value.translation.width) < 12 && abs(value.translation.height) < 12
-                    }
-            )
             .animation(.easeOut(duration: 0.1), value: pressed)
             .sensoryFeedback(.impact(weight: .light), trigger: pressed) { _, down in down }
             .accessibilityAddTraits(.isButton)
-            .accessibilityAction { action() }
     }
 }
