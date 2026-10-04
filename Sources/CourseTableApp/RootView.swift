@@ -63,8 +63,8 @@ enum AppTab: String, CaseIterable, Identifiable {
     var icon: String {
         switch self {
         case .schedule: return "calendar"
-        case .importTab: return "sparkles.rectangle.stack"
-        case .settings: return "slider.horizontal.3"
+        case .importTab: return "tray.and.arrow.down"
+        case .settings: return "gearshape"
         }
     }
 
@@ -92,8 +92,11 @@ struct GlassTabBar: View {
                     }
                 } label: {
                     VStack(spacing: 4) {
-                        Image(systemName: selection == tab ? "\(tab.icon).fill" : tab.icon)
+                        // Always show the icon; express selection with a fill
+                        // variant (safe no-op if the symbol has none) and colour.
+                        Image(systemName: tab.icon)
                             .font(.system(size: 18, weight: .semibold))
+                            .symbolVariant(selection == tab ? .fill : .none)
                         Text(tab.title).font(.system(size: 11, weight: .semibold))
                     }
                     .foregroundStyle(selection == tab ? Color.white : Color.primary.opacity(0.55))
