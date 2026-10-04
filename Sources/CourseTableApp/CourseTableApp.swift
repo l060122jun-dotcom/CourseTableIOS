@@ -150,6 +150,36 @@ final class AppModel: ObservableObject {
         }
     }
 
+    /// Creates a NEW course table from an AI/OCR review and makes it active.
+    /// Imported content never overwrites an existing table.
+    func addTable(
+        named name: String,
+        semesterStart: Date,
+        totalWeeks: Int,
+        periods: [Period],
+        courses: [StoredCourse]
+    ) {
+        let table = CourseTable(
+            name: name.isEmpty ? "新课程表" : name,
+            semesterStartDate: semesterStart,
+            totalWeeks: min(52, max(1, totalWeeks)),
+            hasWeekendCourses: courses.contains { $0.rules.contains { $0.weekday > 5 } },
+            defaultReminderMinutes: 30,
+            isActive: true
+        )
+        let resolvedPeriods = periods.isEmpty ? ScheduleDocument.defaultPeriods : periods.sorted { $0.index < $1.index }
+        let rebound = courses.map { stored -> StoredCourse in
+            var course = stored.course
+            course.courseTableID = table.id
+            return StoredCourse(course: course, rules: stored.rules)
+        }
+        mutate { doc in
+            for i in doc.tables.indices { doc.tables[i].table.isActive = false }
+            doc.tables.append(StoredTable(table: table, periods: resolvedPeriods, courses: rebound))
+            doc.activeTableID = table.id
+        }
+    }
+
     func deleteTable(_ id: UUID) {
         mutate { doc in
             guard doc.tables.count > 1 else { return }
@@ -158,6 +188,36 @@ final class AppModel: ObservableObject {
                 doc.activeTableID = first.id
                 doc.tables[0].table.isActive = true
             }
+        }
+    }
+
+    func renameTable(_ id: UUID, to name: String) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        mutate { doc in
+            guard let index = doc.tables.firstIndex(where: { $0.id == id }) else { return }
+            doc.tables[index].table.name = trimmed
+        }
+    }
+
+    /// Appends imported tables as new course tables (never replaces existing
+    /// ones) and makes the first imported table active.
+    func importTables(_ incoming: [StoredTable], nameOverride: String?) {
+        guard !incoming.isEmpty else { return }
+        mutate { doc in
+            for index in doc.tables.indices { doc.tables[index].table.isActive = false }
+            var tables = incoming
+            let base = nameOverride?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            for index in tables.indices {
+                tables[index].table.isActive = (index == 0)
+                // A file that holds a single table takes the file name; a
+                // multi-table file keeps its own meaningful names.
+                if !base.isEmpty, tables.count == 1 {
+                    tables[index].table.name = base
+                }
+            }
+            doc.tables.append(contentsOf: tables)
+            doc.activeTableID = tables[0].id
         }
     }
 

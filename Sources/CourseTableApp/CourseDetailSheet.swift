@@ -229,6 +229,9 @@ struct TableManagerSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var showingAdd = false
+    @State private var renamingTable: StoredTable?
+    @State private var renameText = ""
+    @State private var pendingDelete: StoredTable?
     @State private var newName = ""
     @State private var newStart = Date()
     @State private var newWeeks = 18
@@ -253,6 +256,26 @@ struct TableManagerSheet: View {
                 }
             }
             .sheet(isPresented: $showingAdd) { addSheet }
+            .alert("重命名课程表", isPresented: Binding(
+                get: { renamingTable != nil },
+                set: { if !$0 { renamingTable = nil } }
+            )) {
+                TextField("名称", text: $renameText)
+                Button("取消", role: .cancel) { renamingTable = nil }
+                Button("保存") {
+                    if let table = renamingTable { model.renameTable(table.id, to: renameText) }
+                    renamingTable = nil
+                }
+            }
+            .alert("删除课程表？", isPresented: Binding(
+                get: { pendingDelete != nil },
+                set: { if !$0 { pendingDelete = nil } }
+            ), presenting: pendingDelete) { table in
+                Button("删除", role: .destructive) { model.deleteTable(table.id) }
+                Button("取消", role: .cancel) {}
+            } message: { table in
+                Text("将删除「\(table.table.name)」及其全部课程，此操作不可撤销。")
+            }
         }
     }
 
@@ -289,9 +312,15 @@ struct TableManagerSheet: View {
         }
         .buttonStyle(.plain)
         .liuyunGlass(.regular, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        // Native iOS menu on long press: 编辑 / 删除.
         .contextMenu {
+            Button { renameText = stored.table.name; renamingTable = stored } label: {
+                Label("编辑", systemImage: "pencil")
+            }
             if model.document.tables.count > 1 {
-                Button(role: .destructive) { model.deleteTable(stored.id) } label: { Label("删除课程表", systemImage: "trash") }
+                Button(role: .destructive) { pendingDelete = stored } label: {
+                    Label("删除", systemImage: "trash")
+                }
             }
         }
     }

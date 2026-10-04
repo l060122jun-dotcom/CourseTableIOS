@@ -283,8 +283,10 @@ struct ImportScreen: View {
         do {
             let data = try FileExporter.readData(at: url)
             let document = try TransferBridge.decode(data)
-            model.replaceDocument(document)
-            confirmationMessage = "已导入 \(document.tables.count) 张课程表，共 \(document.tables.reduce(0) { $0 + $1.courses.count }) 门课程。"
+            let fileName = url.deletingPathExtension().lastPathComponent
+            model.importTables(document.tables, nameOverride: fileName.isEmpty ? nil : fileName)
+            let courseCount = document.tables.reduce(0) { $0 + $1.courses.count }
+            confirmationMessage = "已添加 \(document.tables.count) 张课程表，共 \(courseCount) 门课程，可在课表列表中切换。"
         } catch {
             errorMessage = "导入失败：\(error.localizedDescription)"
         }
@@ -305,6 +307,7 @@ struct ScheduleReviewSheet: View {
     @State private var applySemesterStart = true
     @State private var semesterStart = ScheduleDocument.mondayOfCurrentWeek()
     @State private var totalWeeks = 18
+    @State private var tableName = "新课程表"
 
     private let dayNames = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
 
@@ -346,6 +349,9 @@ struct ScheduleReviewSheet: View {
             _semesterStart = State(initialValue: date)
         }
         _totalWeeks = State(initialValue: min(52, max(1, draft.suggestedTotalWeeks ?? 18)))
+        let suggestedName = draft.suggestedTableName
+            .flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).nilIfBlank }
+        _tableName = State(initialValue: suggestedName ?? "新课程表")
     }
 
     var body: some View {
@@ -387,7 +393,8 @@ struct ScheduleReviewSheet: View {
     }
 
     private var semesterSection: some View {
-        Section("学期信息") {
+        Section("保存为新课表") {
+            TextField("课程表名称", text: $tableName)
             Toggle("更新第一周日期", isOn: $applySemesterStart)
             if applySemesterStart {
                 DatePicker("第一周", selection: $semesterStart, displayedComponents: .date)
@@ -432,17 +439,12 @@ struct ScheduleReviewSheet: View {
     }
 
     private func commit() {
-        let effectiveWeeks = applySemesterStart ? totalWeeks : model.table.totalWeeks
-        if applySemesterStart {
-            model.updateTable { table in
-                table.semesterStartDate = semesterStart
-                table.totalWeeks = min(52, max(1, totalWeeks))
-            }
-        }
+        let effectiveWeeks = min(52, max(1, totalWeeks))
 
-        // Group rows that describe the same course (same name + teacher + room)
-        // into ONE `Course` with several `MeetingRule`s, matching the domain
-        // model — AI emits one row per class period.
+        // Group rows that describe the same course (same name + teacher) into
+        // ONE `Course` with several `MeetingRule`s, matching the domain model.
+        // Location is deliberately NOT part of the key: a course can change
+        // rooms across weeks (e.g. 第1周 汇文楼-540, 第2周起 3号楼-218).
         struct Group { var course: Course; var rules: [MeetingRule] }
         var order: [String] = []
         var groups: [String: Group] = [:]
@@ -453,7 +455,7 @@ struct ScheduleReviewSheet: View {
             guard !cleanName.isEmpty else { continue }
             let teacher = row.teacher.nilIfBlank
             let location = row.location.nilIfBlank
-            let key = [cleanName, teacher ?? "", location ?? ""].joined(separator: "|")
+            let key = [cleanName, teacher ?? ""].joined(separator: "|")
 
             let course: Course
             if let existing = groups[key] {
@@ -482,8 +484,15 @@ struct ScheduleReviewSheet: View {
             groups[key]?.rules.append(rule)
         }
 
-        let incoming = order.compactMap { groups[$0].map { StoredCourse(course: $0.course, rules: $0.rules) } }
-        model.importCourses(incoming)
+        let courses = order.compactMap { groups[$0].map { StoredCourse(course: $0.course, rules: $0.rules) } }
+        guard !courses.isEmpty else { return }
+        model.addTable(
+            named: tableName,
+            semesterStart: semesterStart,
+            totalWeeks: effectiveWeeks,
+            periods: ScheduleDocument.defaultPeriods,
+            courses: courses
+        )
         dismiss()
     }
 }
