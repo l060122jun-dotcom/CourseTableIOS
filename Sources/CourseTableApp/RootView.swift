@@ -32,7 +32,7 @@ struct RootView: View {
                     .allowsHitTesting(tab == .settings)
                     .accessibilityHidden(tab != .settings)
             }
-            .transaction { $0.animation = nil }
+            .animation(nil, value: tab)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             GlassTabBar(selection: $tab, namespace: tabNamespace)

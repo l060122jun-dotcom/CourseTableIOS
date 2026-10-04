@@ -5,16 +5,22 @@ import UIKit
 /// The hit region is restricted to the timetable, excluding the week strip.
 struct WeekSwipeCapture: UIViewRepresentable {
     var onSwipe: (Int) -> Void
+    var onDrag: (CGFloat) -> Void
+    var onRelease: () -> Void
 
     func makeUIView(context: Context) -> CaptureView {
         let view = CaptureView()
         view.onSwipe = onSwipe
+        view.onDrag = onDrag
+        view.onRelease = onRelease
         view.isUserInteractionEnabled = false
         return view
     }
 
     func updateUIView(_ view: CaptureView, context: Context) {
         view.onSwipe = onSwipe
+        view.onDrag = onDrag
+        view.onRelease = onRelease
     }
 
     static func dismantleUIView(_ view: CaptureView, coordinator: ()) {
@@ -23,6 +29,8 @@ struct WeekSwipeCapture: UIViewRepresentable {
 
     final class CaptureView: UIView, UIGestureRecognizerDelegate {
         var onSwipe: ((Int) -> Void)?
+        var onDrag: ((CGFloat) -> Void)?
+        var onRelease: (() -> Void)?
         private weak var host: UIScrollView?
         private lazy var pan: UIPanGestureRecognizer = {
             let recognizer = UIPanGestureRecognizer(target: self, action: #selector(handlePan(_:)))
@@ -74,10 +82,19 @@ struct WeekSwipeCapture: UIViewRepresentable {
         }
 
         @objc private func handlePan(_ recognizer: UIPanGestureRecognizer) {
-            guard recognizer.state == .ended else { return }
-            let movement = recognizer.translation(in: self)
-            guard abs(movement.x) >= 40, abs(movement.x) > abs(movement.y) * 1.3 else { return }
-            onSwipe?(movement.x < 0 ? 1 : -1)
+            let movement = recognizer.translation(in: host)
+            switch recognizer.state {
+            case .began, .changed:
+                onDrag?(movement.x)
+            case .ended:
+                if abs(movement.x) >= 40, abs(movement.x) > abs(movement.y) * 1.3 {
+                    onSwipe?(movement.x < 0 ? 1 : -1)
+                }
+                onRelease?()
+            case .cancelled, .failed:
+                onRelease?()
+            default: break
+            }
         }
     }
 }
