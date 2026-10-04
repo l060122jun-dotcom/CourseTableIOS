@@ -17,9 +17,6 @@ struct ScheduleScreen: View {
     @State private var showingEditor = false
     @State private var editingCourse: StoredCourse?
     @State private var showingTableManager = false
-    @State private var swipeOffset: CGFloat = 0
-    @State private var swipeDirection = 1
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private var detailSelection: Binding<DetailSelection?> {
         Binding(
             get: { selectedCourseID.map(DetailSelection.init) },
@@ -42,30 +39,23 @@ struct ScheduleScreen: View {
             VStack(spacing: 16) {
                 header
                 weekSelector(activeWeeks: snapshot.activeWeeks)
-                ZStack {
-                    grid(snapshot: snapshot)
-                        .id(model.currentWeek)
-                        .transition(reduceMotion ? .opacity : .asymmetric(
-                            insertion: .move(edge: swipeDirection > 0 ? .trailing : .leading).combined(with: .opacity),
-                            removal: .move(edge: swipeDirection > 0 ? .leading : .trailing).combined(with: .opacity)
+                TabView(selection: Binding(
+                    get: { model.currentWeek },
+                    set: { model.setCurrentWeek($0) }
+                )) {
+                    ForEach(1...model.table.totalWeeks, id: \.self) { week in
+                        grid(snapshot: WeekSnapshot(
+                            courses: model.courses,
+                            periods: model.periods,
+                            weekdayCount: model.weekdayCount,
+                            currentWeek: week,
+                            showOutside: model.table.showCoursesOutsideSelectedWeek
                         ))
+                        .tag(week)
+                    }
                 }
-                .offset(x: reduceMotion ? 0 : swipeOffset)
-                .clipped()
-                .background(WeekSwipeCapture(onSwipe: { direction in
-                    swipeDirection = direction
-                    withAnimation(.easeInOut(duration: 0.28)) {
-                        model.setCurrentWeek(model.currentWeek + direction)
-                    }
-                }, onDrag: { distance in
-                    let atBoundary = (model.currentWeek == 1 && distance > 0)
-                        || (model.currentWeek == model.table.totalWeeks && distance < 0)
-                    swipeOffset = max(-110, min(110, distance * (atBoundary ? 0.15 : 0.5)))
-                }, onRelease: {
-                    withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
-                        swipeOffset = 0
-                    }
-                }))
+                .tabViewStyle(.page(indexDisplayMode: .never))
+                .frame(height: CGFloat(model.periods.count) * periodHeight + 36)
                 customSection
             }
             .padding(.horizontal, 6)
