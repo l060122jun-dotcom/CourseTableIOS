@@ -17,10 +17,10 @@ enum SpreadsheetTextDecoder {
             return String(decoding: data.dropFirst(3), as: UTF8.self)
         }
         if data.count >= 2, data[0] == 0xFF, data[1] == 0xFE {
-            return String(decoding: data.dropFirst(2), as: UTF16.self)
+            return decodeUTF16LE(Array(data.dropFirst(2)))
         }
         if data.count >= 2, data[0] == 0xFE, data[1] == 0xFF {
-            return decodeUTF16BE(data.dropFirst(2))
+            return decodeUTF16BE(Array(data.dropFirst(2)))
         }
         if let utf8 = String(data: data, encoding: .utf8) { return utf8 }
         // GB18030 / GBK common for legacy Chinese spreadsheets.
@@ -30,45 +30,55 @@ enum SpreadsheetTextDecoder {
         return String(decoding: data, as: UTF8.self)
     }
 
-    private static func decodeUTF16BE(_ data: Data) -> String {
-        var bytes = [UInt8](data)
-        // Swap to little-endian, then decode.
+    private static func decodeUTF16LE(_ bytes: [UInt8]) -> String {
+        var units: [UInt16] = []
+        units.reserveCapacity(bytes.count / 2)
         var index = 0
         while index + 1 < bytes.count {
-            bytes.swapAt(index, index + 1)
+            units.append(UInt16(bytes[index]) | (UInt16(bytes[index + 1]) << 8))
             index += 2
         }
-        return String(decoding: bytes, as: UTF16.self)
+        return String(decoding: units, as: UTF16.self)
+    }
+
+    private static func decodeUTF16BE(_ data: Data) -> String {
+        decodeUTF16BE(Array(data))
+    }
+
+    private static func decodeUTF16BE(_ bytes: [UInt8]) -> String {
+        var units: [UInt16] = []
+        units.reserveCapacity(bytes.count / 2)
+        var index = 0
+        while index + 1 < bytes.count {
+            units.append((UInt16(bytes[index]) << 8) | UInt16(bytes[index + 1]))
+            index += 2
+        }
+        return String(decoding: units, as: UTF16.self)
     }
 
     /// Chooses the most likely delimiter per file and converts everything to tabs.
     static func normalizeDelimiters(_ text: String) -> String {
         let lines = text.split(whereSeparator: \.isNewline).map { String($0) }
         guard !lines.isEmpty else { return text }
-        let sample = lines.prefix(30).joined(separator: "\n")
 
-        // Legacy .xls (.docformat) yields NUL-separated ASCII; strip control chars.
-        let cleaned = sample.replacingOccurrences(of: "\u{0}", with: "\t")
+        // Legacy .xls (.docformat) yields NUL-separated ASCII; treat NUL as tab.
+        let cleaned = text.replacingOccurrences(of: "\u{0}", with: "\t")
+        let cleanedLines = cleaned.split(whereSeparator: \.isNewline).map { String($0) }
 
-        let candidates: [(Character, Int)] = [("\t", 0), (",", 0), (";", 0), ("；", 0), ("，", 0)]
-        var counts: [Int] = Array(repeating: 0, count: candidates.count)
-        for (lineIndex, line) in lines.prefix(30).enumerated() {
-            _ = lineIndex
-            for (index, candidate) in candidates.enumerated() {
-                counts[index] += line.filter { $0 == candidate.0 }.count
-            }
+        // If tabs already dominate, keep as-is.
+        let tabCount = cleanedLines.prefix(30).reduce(0) { $0 + $1.filter { $0 == "\t" }.count }
+        if tabCount > 0 { return cleaned }
+
+        let candidates: [Character] = [",", ";", "；", "，", "|"]
+        var bestDelimiter: Character?
+        var bestCount = 0
+        for candidate in candidates {
+            let count = cleanedLines.prefix(30).reduce(0) { $0 + $1.filter { $0 == candidate }.count }
+            if count > bestCount { bestCount = count; bestDelimiter = candidate }
         }
-        let tabCount = cleaned.filter { $0 == "\t" }.count
-        if tabCount >= counts.first!.count { return cleaned }
+        guard let delimiter = bestDelimiter, bestCount > 0 else { return cleaned }
 
-        guard let best = counts.enumerated().max(by: { $0.element < $1.element }), best.element > 0 else {
-            return cleaned
-        }
-        let delimiter = candidates[best.offset].0
-        if delimiter == "\t" { return cleaned }
-
-        // Split each line on the delimiter (naive CSV: no embedded quotes here).
-        return lines.map { line in
+        return cleanedLines.map { line in
             splitCSVLine(line, delimiter: delimiter).joined(separator: "\t")
         }.joined(separator: "\n")
     }
