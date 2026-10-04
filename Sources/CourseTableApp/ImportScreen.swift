@@ -57,12 +57,12 @@ struct ImportScreen: View {
 
     private var importTypes: [UTType] {
         // .lcs is JSON under the hood; accept json, xlsx and generic data so
-        // the picker can surface every supported file.
-        var types: [UTType] = [.json]
-        if let xlsx = UTType(filenameExtension: "xlsx") { types.append(xlsx) }
-        if let lcs = UTType(filenameExtension: "lcs") { types.append(lcs) }
-        types.append(.spreadsheet)
-        types.append(.data)
+        // Accept every spreadsheet-ish type the system knows plus generic data,
+        // so xlsx / xls / csv / tsv / lcs / json are all selectable.
+        var types: [UTType] = [.json, .spreadsheet, .commaSeparatedText, .tabSeparatedText, .plainText, .data]
+        for ext in ["xlsx", "xls", "xlsm", "csv", "tsv", "lcs"] {
+            if let type = UTType(filenameExtension: ext) { types.append(type) }
+        }
         return types
     }
 
@@ -250,8 +250,10 @@ struct ImportScreen: View {
         switch result {
         case .success(let urls):
             guard let url = urls.first else { return }
-            if wasExcelPick || url.pathExtension.lowercased() == "xlsx" {
-                importExcel(url)
+            let ext = url.pathExtension.lowercased()
+            let scheduleTypes: Set<String> = ["lcs", "json"]
+            if wasExcelPick || !scheduleTypes.contains(ext) {
+                importSpreadsheet(url)
             } else {
                 importScheduleFile(url)
             }
@@ -261,15 +263,15 @@ struct ImportScreen: View {
         }
     }
 
-    private func importExcel(_ url: URL) {
-        beginScanning("正在解析 Excel 并识别课程…")
+    private func importSpreadsheet(_ url: URL) {
+        beginScanning("正在解析表格并识别课程…")
         Task {
             do {
                 let data = try FileExporter.readData(at: url)
-                let grid = try XLSXReader.read(data: data)
-                draft = try await AIScheduleService().recognize(spreadsheetText: grid)
+                let ext = url.pathExtension
+                draft = try await AIScheduleService().recognize(spreadsheet: data, fileExtension: ext)
             } catch {
-                errorMessage = "Excel 识别失败：\(error.localizedDescription)"
+                errorMessage = "表格识别失败：\(error.localizedDescription)"
             }
             isScanning = false
         }

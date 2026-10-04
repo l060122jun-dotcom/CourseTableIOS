@@ -64,20 +64,45 @@ final class AIScheduleService {
         return try AIResultParser.parse(content)
     }
 
-    // MARK: Text (Excel / pasted grid)
+    // MARK: Spreadsheet (Excel / CSV / TSV)
 
     func recognize(spreadsheetText: String) async throws -> OCRDraft {
         let userContent: [[String: Any]] = [
             ["type": "text", "text": """
-            以下是从 Excel 课程表解析出的内容，每行格式为「星期几 周 第X-Y节 | 单元格原文」。
-            星期用数字表示：1=周一, 2=周二, 3=周三, 4=周四, 5=周五, 6=周六, 7=周日。
-            请严格按行首的星期数字设置 weekday，按「第X-Y节」设置 startPeriod/endPeriod，从单元格原文中提取课程名、教师、周次、教室。只输出 JSON：
+            以下是一份课程表（可能来自 Excel / CSV，格式不限）。其内容已被转成文本，行首若为「N周」表示星期（1=周一…7=周日），「第X-Y节」表示节次。
+            请忽略「工作表」「R#C#」等辅助标记，只提取真正的课程信息，并按系统要求只输出 JSON：
 
             \(spreadsheetText)
             """]
         ]
         let content = try await complete(userContent: userContent)
         return try AIResultParser.parse(content)
+    }
+
+    /// From raw spreadsheet bytes: picks the best extraction and sends it.
+    func recognize(spreadsheet data: Data, fileExtension: String) async throws -> OCRDraft {
+        let text: String
+        switch fileExtension.lowercased() {
+        case "csv", "txt":
+            text = SpreadsheetTextDecoder.decodeCSV(data)
+        case "xlsx":
+            text = try TimetableTextExtractor.extract(from: data)
+        case "xls":
+            // Legacy BIFF .xls: best effort — treat as binary text and let the
+            // model reconstruct; also try CSV decoding as a fallback.
+            text = SpreadsheetTextDecoder.decodeCSV(data)
+        default:
+            // Try xlsx first, fall back to CSV.
+            if let extracted = try? TimetableTextExtractor.extract(from: data), !extracted.isEmpty {
+                text = extracted
+            } else {
+                text = SpreadsheetTextDecoder.decodeCSV(data)
+            }
+        }
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw AIScheduleError.emptyResult
+        }
+        return try await recognize(spreadsheetText: text)
     }
 
     /// Connectivity check used by the settings screen.
