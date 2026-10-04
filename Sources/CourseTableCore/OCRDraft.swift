@@ -98,12 +98,16 @@ public struct OCRDraftCourse: Identifiable, Codable, Equatable, Sendable {
     }
 }
 
-/// The reviewable draft. Courses are never persisted straight from OCR.
+/// The reviewable draft. Courses are never persisted straight from OCR/AI.
 public struct OCRDraft: Identifiable, Codable, Equatable, Sendable {
     public let id: UUID
     public var rawText: String
     public var courses: [OCRDraftCourse]
     public var warnings: [String]
+    /// Suggested term metadata parsed from the source (nil when unknown).
+    public var suggestedTotalWeeks: Int?
+    public var suggestedSemesterStart: String?
+    public var suggestedTableName: String?
     public var createdAt: Date
 
     public init(
@@ -111,12 +115,18 @@ public struct OCRDraft: Identifiable, Codable, Equatable, Sendable {
         rawText: String,
         courses: [OCRDraftCourse] = [],
         warnings: [String] = [],
+        suggestedTotalWeeks: Int? = nil,
+        suggestedSemesterStart: String? = nil,
+        suggestedTableName: String? = nil,
         createdAt: Date = .now
     ) {
         self.id = id
         self.rawText = rawText
         self.courses = courses
         self.warnings = warnings
+        self.suggestedTotalWeeks = suggestedTotalWeeks
+        self.suggestedSemesterStart = suggestedSemesterStart
+        self.suggestedTableName = suggestedTableName
         self.createdAt = createdAt
     }
 }

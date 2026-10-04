@@ -54,7 +54,9 @@ enum AIResultParser {
         // Some models return a flat course array without a tables wrapper.
         if rows.isEmpty {
             if let array = root as? [Any] {
-                for course in array { rows.append(contentsOf: self.rows(from: course, meta: meta)) }
+                for case let course as [String: Any] in array {
+                    rows.append(contentsOf: self.rows(from: course, meta: meta))
+                }
             } else if let dict = root as? [String: Any] {
                 // A single course object.
                 if dict["name"] != nil || dict["courseName"] != nil || dict["课程名"] != nil {
@@ -74,7 +76,14 @@ enum AIResultParser {
         if meta.semesterStart == nil { warnings.append("未识别到开学日期，已按本学期第一个周一处理。") }
 
         let summary = "AI 识别 · \(rows.count) 条 · 建议 \(meta.totalWeeks ?? 18) 周 · 起始 \(meta.semesterStart ?? ScheduleTransfer.isoDate(ScheduleDocument.mondayOfCurrentWeek()))"
-        return OCRDraft(rawText: summary, courses: rows, warnings: warnings)
+        return OCRDraft(
+            rawText: summary,
+            courses: rows,
+            warnings: warnings,
+            suggestedTotalWeeks: meta.totalWeeks,
+            suggestedSemesterStart: meta.semesterStart,
+            suggestedTableName: meta.tableName
+        )
     }
 
     // MARK: - Metadata
@@ -251,33 +260,33 @@ enum AIResultParser {
     static func parseWeekExpression(_ text: String, totalWeeks: Int) -> [Int]? {
         let lower = text.lowercased()
         var weeks = Set<Int>()
-        // Numeric ranges and singles.
+        let ns = text as NSString
+        let full = NSRange(location: 0, length: ns.length)
+
+        // 1) Ranges first, recording the digits they consume.
+        var rangeCovered = IndexSet()
         if let regex = try? NSRegularExpression(pattern: "(\\d+)\\s*[-—~至]\\s*(\\d+)") {
-            let ns = text as NSString
-            for match in regex.matches(in: text, range: NSRange(location: 0, length: ns.length)) {
+            for match in regex.matches(in: text, range: full) {
                 if let a = Int(ns.substring(with: match.range(at: 1))),
                    let b = Int(ns.substring(with: match.range(at: 2))), a <= b {
                     for week in a...b where week >= 1 && week <= max(totalWeeks, b) { weeks.insert(week) }
+                    rangeCovered.insert(integersIn: match.range.location..<(match.range.location + match.range.length))
                 }
             }
         }
+        // 2) Bare numbers not already part of a range (e.g. "1,3,5-9周").
         if let regex = try? NSRegularExpression(pattern: "\\d+") {
-            let ns = text as NSString
-            for match in regex.matches(in: text, range: NSRange(location: 0, length: ns.length)) {
+            for match in regex.matches(in: text, range: full) where !rangeCovered.contains(match.range.location) {
                 if let value = Int(ns.substring(with: match.range)), value >= 1, value <= max(totalWeeks, 52) {
-                    // Only add bare numbers when there was no range at all.
-                    if weeks.isEmpty { weeks.insert(value) }
+                    weeks.insert(value)
                 }
             }
         }
+
         guard !weeks.isEmpty else {
             // Pattern words without numbers → apply to full semester.
-            if lower.contains("单") || lower.contains("odd") {
-                return Array(stride(from: 1, through: totalWeeks, by: 2))
-            }
-            if lower.contains("双") || lower.contains("even") {
-                return Array(stride(from: 2, through: totalWeeks, by: 2))
-            }
+            if lower.contains("单") || lower.contains("odd") { return Array(stride(from: 1, through: totalWeeks, by: 2)) }
+            if lower.contains("双") || lower.contains("even") { return Array(stride(from: 2, through: totalWeeks, by: 2)) }
             return nil
         }
         var result = weeks.sorted()
@@ -305,22 +314,27 @@ enum AIResultParser {
     }
 
     static func parsePeriodExpression(_ text: String) -> [(Int, Int)]? {
+        let ns = text as NSString
+        let full = NSRange(location: 0, length: ns.length)
+        var spans: [(Int, Int)] = []
+        var rangeCovered = IndexSet()
         if let regex = try? NSRegularExpression(pattern: "(\\d+)\\s*[-—~至]\\s*(\\d+)") {
-            let ns = text as NSString
-            let matches = regex.matches(in: text, range: NSRange(location: 0, length: ns.length))
-            if let match = matches.first,
-               let a = Int(ns.substring(with: match.range(at: 1))),
-               let b = Int(ns.substring(with: match.range(at: 2))) {
-                return [(max(1, min(a, b)), max(a, b))]
+            for match in regex.matches(in: text, range: full) {
+                if let a = Int(ns.substring(with: match.range(at: 1))),
+                   let b = Int(ns.substring(with: match.range(at: 2))) {
+                    spans.append((max(1, min(a, b)), max(a, b)))
+                    rangeCovered.insert(integersIn: match.range.location..<(match.range.location + match.range.length))
+                }
             }
         }
         if let regex = try? NSRegularExpression(pattern: "\\d+") {
-            let ns = text as NSString
-            let numbers = regex.matches(in: text, range: NSRange(location: 0, length: ns.length))
-                .compactMap { Int(ns.substring(with: $0.range)) }.filter { $0 >= 1 }
-            if !numbers.isEmpty { return contiguousSpans(numbers.sorted()) }
+            let singles = regex.matches(in: text, range: full)
+                .filter { !rangeCovered.contains($0.range.location) }
+                .compactMap { Int(ns.substring(with: $0.range)) }
+                .filter { $0 >= 1 }
+            if !singles.isEmpty { spans.append(contentsOf: contiguousSpans(singles.sorted())) }
         }
-        return nil
+        return spans.isEmpty ? nil : spans
     }
 
     private static func contiguousSpans(_ sorted: [Int]) -> [(Int, Int)] {
@@ -429,7 +443,8 @@ enum AIResultParser {
         return result
     }
 
-    /// Strips markdown fences / prose and returns the outermost JSON object or array.
+    /// Strips markdown fences / prose and returns the outermost balanced JSON
+    /// object or array (brace-matched, so trailing prose is not swept in).
     static func extractJSON(from text: String) -> String {
         var trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         if let fenceStart = trimmed.range(of: "```") {
@@ -438,26 +453,32 @@ enum AIResultParser {
             trimmed = trimmed.replacingOccurrences(of: "json", with: "", options: [.caseInsensitive, .anchored])
                 .trimmingCharacters(in: .whitespacesAndNewlines)
         }
-        let firstBrace = trimmed.firstIndex(of: "{")
-        let firstBracket = trimmed.firstIndex(of: "[")
-        let start: String.Index?
-        switch (firstBrace, firstBracket) {
-        case let (b?, k?): start = b < k ? b : k
-        case let (b?, nil): start = b
-        case let (nil, k?): start = k
-        default: start = nil
+        // Find the first opener and scan to its matching closer.
+        guard let startIndex = trimmed.firstIndex(where: { $0 == "{" || $0 == "[" }) else { return trimmed }
+        let opener = trimmed[startIndex]
+        let closer: Character = opener == "{" ? "}" : "]"
+        var depth = 0
+        var inString = false
+        var escaped = false
+        var current = startIndex
+        while current < trimmed.endIndex {
+            let character = trimmed[current]
+            if inString {
+                if escaped { escaped = false }
+                else if character == "\\" { escaped = true }
+                else if character == "\"" { inString = false }
+            } else {
+                switch character {
+                case "\"": inString = true
+                case opener: depth += 1
+                case closer:
+                    depth -= 1
+                    if depth == 0 { return String(trimmed[startIndex...current]) }
+                default: break
+                }
+            }
+            current = trimmed.index(after: current)
         }
-        guard let start else { return trimmed }
-        let lastBrace = trimmed.lastIndex(of: "}")
-        let lastBracket = trimmed.lastIndex(of: "]")
-        let end: String.Index?
-        switch (lastBrace, lastBracket) {
-        case let (b?, k?): end = b > k ? b : k
-        case let (b?, nil): end = b
-        case let (nil, k?) : end = k
-        default: end = nil
-        }
-        guard let end, start <= end else { return trimmed }
-        return String(trimmed[start...end])
+        return trimmed
     }
 }

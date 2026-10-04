@@ -46,6 +46,9 @@ struct ImportScreen: View {
             allowedContentTypes: importTypes,
             allowsMultipleSelection: false
         ) { handleFileImport($0) }
+        .onChange(of: showingFileImporter) { _, presented in
+            if !presented { excelPickRequested = false }
+        }
         .onChange(of: selectedItem) { _, item in
             guard let item else { return }
             scanImage(item)
@@ -174,7 +177,7 @@ struct ImportScreen: View {
                 }
                 .buttonStyle(.plain)
                 Divider().opacity(0.3)
-                Button { showingFileImporter = true } label: {
+                Button { excelPickRequested = false; showingFileImporter = true } label: {
                     Label("导入课表文件（.lcs / JSON）", systemImage: "square.and.arrow.down")
                         .font(.system(size: 14, weight: .medium))
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -199,6 +202,7 @@ struct ImportScreen: View {
 
     private func scanImage(_ item: PhotosPickerItem) {
         beginScanning("正在识别图片…")
+        selectedItem = nil
         Task {
             do {
                 guard let data = try await item.loadTransferable(type: Data.self), let image = UIImage(data: data) else {
@@ -213,7 +217,6 @@ struct ImportScreen: View {
     }
 
     private func pickExcel() {
-        // Funnel through the same importer state by toggling a dedicated flag.
         excelPickRequested = true
         showingFileImporter = true
     }
@@ -253,6 +256,7 @@ struct ImportScreen: View {
                 importScheduleFile(url)
             }
         case .failure(let error):
+            if (error as NSError).code == NSUserCancelledError { return }
             errorMessage = "选择文件失败：\(error.localizedDescription)"
         }
     }
@@ -329,11 +333,15 @@ struct ScheduleReviewSheet: View {
                 endPeriod: max(1, course.endPeriod ?? course.startPeriod ?? 1),
                 customStart: EditableRow.date(from: course.customStart) ?? EditableRow.date(minutes: 16 * 60 + 40),
                 customEnd: EditableRow.date(from: course.customEnd) ?? EditableRow.date(minutes: 18 * 60 + 10),
-                weeks: Set(course.weeks ?? Array(1...18)),
+                weeks: Set(course.weeks ?? Array(1...(draft.suggestedTotalWeeks ?? 18))),
                 included: true
             )
         })
-        _totalWeeks = State(initialValue: 18)
+        if let suggestedStart = draft.suggestedSemesterStart,
+           let date = ScheduleTransfer.parseDate(suggestedStart) {
+            _semesterStart = State(initialValue: date)
+        }
+        _totalWeeks = State(initialValue: min(52, max(1, draft.suggestedTotalWeeks ?? 18)))
     }
 
     var body: some View {
@@ -427,18 +435,37 @@ struct ScheduleReviewSheet: View {
                 table.totalWeeks = min(52, max(1, totalWeeks))
             }
         }
-        var incoming: [StoredCourse] = []
+
+        // Group rows that describe the same course (same name + teacher + room)
+        // into ONE `Course` with several `MeetingRule`s, matching the domain
+        // model — AI emits one row per class period.
+        struct Group { var course: Course; var rules: [MeetingRule] }
+        var order: [String] = []
+        var groups: [String: Group] = [:]
         let palette = ["#0F77FF", "#3BA55D", "#E84A8A", "#F5A623", "#8E5BF0", "#00B8C4", "#EF4B4B", "#5C7CFA"]
-        for (index, row) in rows.enumerated() where row.included {
+
+        for row in rows where row.included {
             let cleanName = row.name.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !cleanName.isEmpty else { continue }
-            let course = Course(
-                courseTableID: model.table.id,
-                name: cleanName,
-                teacher: row.teacher.nilIfBlank,
-                location: row.location.nilIfBlank,
-                colorHex: palette[index % palette.count]
-            )
+            let teacher = row.teacher.nilIfBlank
+            let location = row.location.nilIfBlank
+            let key = [cleanName, teacher ?? "", location ?? ""].joined(separator: "|")
+
+            let course: Course
+            if let existing = groups[key] {
+                course = existing.course
+            } else {
+                course = Course(
+                    courseTableID: model.table.id,
+                    name: cleanName,
+                    teacher: teacher,
+                    location: location,
+                    colorHex: palette[order.count % palette.count]
+                )
+                order.append(key)
+                groups[key] = Group(course: course, rules: [])
+            }
+
             let weeks = Set(row.weeks.filter { $0 >= 1 && $0 <= effectiveWeeks })
             let finalWeeks = weeks.isEmpty ? Set(1...max(1, effectiveWeeks)) : weeks
             let rule: MeetingRule
@@ -448,8 +475,10 @@ struct ScheduleReviewSheet: View {
             } else {
                 rule = MeetingRule(courseID: course.id, weekday: row.weekday, weekSet: finalWeeks, customStartMinute: EditableRow.minutes(of: row.customStart), customEndMinute: EditableRow.minutes(of: row.customEnd))
             }
-            incoming.append(StoredCourse(course: course, rules: [rule]))
+            groups[key]?.rules.append(rule)
         }
+
+        let incoming = order.compactMap { groups[$0].map { StoredCourse(course: $0.course, rules: $0.rules) } }
         model.importCourses(incoming)
         dismiss()
     }

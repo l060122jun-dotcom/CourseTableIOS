@@ -36,10 +36,20 @@ enum XLSXReader {
     private static func parseSharedStrings(_ data: Data) -> [String] {
         guard let xml = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .isoLatin1) else { return [] }
         var result: [String] = []
-        // Each <si> may contain one or more <t> runs; concatenate them.
-        for si in matches(pattern: "<si>(.*?)</si>", in: xml) {
-            let texts = matches(pattern: "<t[^>]*>(.*?)</t>", in: si)
-            result.append(texts.map(decodeEntities).joined())
+        // Walk <si ...> ... </si> blocks in order. A self-closing <si/> is an
+        // empty string but must still occupy an index so `t="s"` references
+        // stay aligned.
+        let ns = xml as NSString
+        guard let regex = try? NSRegularExpression(pattern: "<si\\b[^>]*/>|<si\\b[^>]*>(.*?)</si>", options: [.dotMatchesLineSeparators]) else { return [] }
+        for match in regex.matches(in: xml, range: NSRange(location: 0, length: ns.length)) {
+            let contentRange = match.range(at: 1)
+            if contentRange.location == NSNotFound {
+                result.append("")
+            } else {
+                let inner = ns.substring(with: contentRange)
+                let texts = matches(pattern: "<t[^>]*>(.*?)</t>|<t[^>]*/>", in: inner)
+                result.append(texts.map(decodeEntities).joined())
+            }
         }
         return result
     }
@@ -49,7 +59,17 @@ enum XLSXReader {
     private static func parseSheet(_ data: Data, sharedStrings: [String]) -> [[String]] {
         guard let xml = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .isoLatin1) else { return [] }
         var grid: [[String]] = []
-        for rowXML in matches(pattern: "<row[^>]*>(.*?)</row>", in: xml) {
+        // Match every <row ...>...</row> and self-closing <row .../> so empty
+        // separator rows keep their position (which encodes period index).
+        let ns = xml as NSString
+        guard let rowRegex = try? NSRegularExpression(pattern: "<row\\b[^>]*/>|<row\\b[^>]*>(.*?)</row>", options: [.dotMatchesLineSeparators]) else { return [] }
+        for rowMatch in rowRegex.matches(in: xml, range: NSRange(location: 0, length: ns.length)) {
+            let innerRange = rowMatch.range(at: 1)
+            if innerRange.location == NSNotFound {
+                grid.append([])
+                continue
+            }
+            let rowXML = ns.substring(with: innerRange)
             var row: [String] = []
             var pendingColumn = 0
             for cellXML in cellSlices(in: rowXML) {
@@ -76,9 +96,11 @@ enum XLSXReader {
         return grid
     }
 
-    /// Splits a `<row>...</row>` body into individual `<c ...>...</c>` slices.
+    /// Splits a `<row>...</row>` body into individual cells. The self-closing
+    /// alternative is listed first so a `<c .../>` is not swallowed by a later
+    /// `.*?</c>` that belongs to a following cell.
     private static func cellSlices(in rowXML: String) -> [String] {
-        matches(pattern: "<c\\b[^>]*>.*?</c>|<c\\b[^>]*/>", in: rowXML)
+        matches(pattern: "<c\\b[^>]*/>|<c\\b[^>]*>.*?</c>", in: rowXML)
     }
 
     private static func attributes(in cellXML: String) -> [String: String] {
