@@ -231,20 +231,34 @@ struct ScheduleScreen: View {
     }
 
     private func dayHeaderRow(week: Int) -> some View {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: model.table.timeZoneID) ?? .current
+        return TimelineView(.periodic(from: .now, by: 60)) { context in
         HStack(spacing: 3) {
             Color.clear.frame(width: 34, height: 1)
             ForEach(0..<model.weekdayCount, id: \.self) { index in
+                let date = SemesterCalendar.date(semesterStart: model.table.semesterStartDate, week: week, weekday: index + 1, calendar: calendar)
+                let isToday = date.map { calendar.isDate($0, inSameDayAs: context.date) } ?? false
                 VStack(spacing: 5) {
                     Text("周\(dayNames[index])")
                         .font(.system(size: 12, weight: .semibold))
-                    if let date = SemesterCalendar.date(semesterStart: model.table.semesterStartDate, week: week, weekday: index + 1) {
-                        Text("\(Calendar.current.component(.month, from: date))/\(Calendar.current.component(.day, from: date))")
+                    if let date {
+                        Text("\(calendar.component(.month, from: date))/\(calendar.component(.day, from: date))")
                             .font(.system(size: 10, weight: .medium))
                     }
                 }
-                .foregroundStyle(.secondary)
+                .foregroundStyle(isToday ? GlassPalette.accent : Color.secondary)
                 .frame(maxWidth: .infinity)
+                .padding(.vertical, 3)
+                .background {
+                    if isToday {
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(GlassPalette.accent.opacity(0.18))
+                            .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(GlassPalette.accent.opacity(0.5), lineWidth: 0.75))
+                    }
+                }
             }
+        }
         }
     }
 
