@@ -10,6 +10,9 @@ struct CourseTableApp: App {
     var body: some Scene {
         WindowGroup {
             RootView()
+                .task {
+                    WidgetPublisher.publish(model.document)
+                }
                 .environmentObject(model)
                 .tint(GlassPalette.accent)
                 .preferredColorScheme(model.appearance.colorScheme)
@@ -112,6 +115,7 @@ final class AppModel: ObservableObject {
             do {
                 let data = try JSONEncoder().encode(snapshot)
                 try ScheduleStore.write(data)
+                WidgetPublisher.publish(snapshot)
             } catch {
                 DispatchQueue.main.async { self?.storageMessage = "保存课程失败：\(error.localizedDescription)" }
             }

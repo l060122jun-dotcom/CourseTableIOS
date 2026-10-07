@@ -25,6 +25,7 @@ targets:
     type: application
     platform: iOS
     sources:
+      - path: Sources/WidgetShared/WidgetSchedule.swift
       - path: Sources/CourseTableApp
         excludes:
           - PrivacyInfo.xcprivacy
@@ -33,6 +34,8 @@ targets:
       - path: Assets.xcassets
     dependencies:
       - target: CourseTableCore
+      - target: CourseTableWidget
+        embed: true
     info:
       path: Sources/CourseTableApp/Info.plist
       properties:
@@ -63,12 +66,33 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.codex.coursetable.app
+        CODE_SIGN_ENTITLEMENTS: Sources/WidgetShared/Shared.entitlements
         CODE_SIGN_STYLE: Automatic
         MARKETING_VERSION: "2.0.0"
         CURRENT_PROJECT_VERSION: "2"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         INFOPLIST_KEY_UIStatusBarStyle: UIStatusBarStyleDefault
         SWIFT_STRICT_CONCURRENCY: minimal
+  CourseTableWidget:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: Sources/CourseTableWidget
+      - path: Sources/WidgetShared/WidgetSchedule.swift
+    info:
+      path: Sources/CourseTableWidget/Info.plist
+      properties:
+        CFBundleDisplayName: 流云课表小组件
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.codex.coursetable.app.widget
+        CODE_SIGN_ENTITLEMENTS: Sources/WidgetShared/Shared.entitlements
+        SKIP_INSTALL: YES
+        APPLICATION_EXTENSION_API_ONLY: YES
+        MARKETING_VERSION: "2.0.0"
+        CURRENT_PROJECT_VERSION: "2"
   CourseTableCoreTests:
     type: bundle.unit-test
     platform: iOS
