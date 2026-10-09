@@ -27,6 +27,10 @@ struct RootView: View {
                     .opacity(tab == .importTab ? 1 : 0)
                     .allowsHitTesting(tab == .importTab)
                     .accessibilityHidden(tab != .importTab)
+                CourseOverviewScreen()
+                    .opacity(tab == .courses ? 1 : 0)
+                    .allowsHitTesting(tab == .courses)
+                    .accessibilityHidden(tab != .courses)
                 SettingsScreen()
                     .opacity(tab == .settings ? 1 : 0)
                     .allowsHitTesting(tab == .settings)
@@ -55,6 +59,7 @@ struct RootView: View {
 
 enum AppTab: String, CaseIterable, Identifiable {
     case schedule
+    case courses
     case importTab = "import"
     case settings
 
@@ -63,6 +68,7 @@ enum AppTab: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .schedule: return "课表"
+        case .courses: return "课程"
         case .importTab: return "导入"
         case .settings: return "设置"
         }
@@ -71,6 +77,7 @@ enum AppTab: String, CaseIterable, Identifiable {
     var icon: String {
         switch self {
         case .schedule: return "calendar"
+        case .courses: return "list.bullet.rectangle"
         case .importTab: return "tray.and.arrow.down"
         case .settings: return "gearshape"
         }
@@ -79,6 +86,7 @@ enum AppTab: String, CaseIterable, Identifiable {
     init(screen: String?) {
         switch screen {
         case "import": self = .importTab
+        case "courses": self = .courses
         case "settings": self = .settings
         default: self = .schedule
         }
