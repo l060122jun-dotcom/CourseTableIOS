@@ -39,7 +39,10 @@ struct ScheduleWidgetView: View {
         family != .systemSmall && entry.schedule != nil && today.isEmpty
     }
     var body: some View {
-        if showTomorrow {
+        if family == .accessoryRectangular {
+            lockScreenContent
+                .containerBackground(for: .widget) { Color.clear }
+        } else if showTomorrow {
             HStack(alignment: .top, spacing: family == .accessoryRectangular ? 6 : 12) {
                 VStack(alignment: .leading, spacing: 4) {
                     Image(systemName: "checkmark.circle").foregroundStyle(.secondary)
@@ -133,6 +136,52 @@ struct ScheduleWidgetView: View {
                 Spacer(minLength: 0)
             }
             .containerBackground(.background, for: .widget)
+        }
+    }
+
+    // Lock-screen accessories have a strict height budget. Keep each course
+    // on one line instead of stacking title/time/room beyond that budget.
+    private var lockScreenContent: some View {
+        GeometryReader { geometry in
+            HStack(alignment: .center, spacing: 6) {
+                if showTomorrow {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("今日课程").font(.system(size: 11, weight: .medium))
+                        Text("已结束").font(.system(size: 11, weight: .semibold))
+                    }
+                    .frame(width: geometry.size.width * 0.28, alignment: .leading)
+                    Rectangle().fill(.secondary.opacity(0.3)).frame(width: 0.5, height: max(0, geometry.size.height - 8))
+                }
+                let lessons = showTomorrow ? tomorrow : today
+                let count = min(2, lessons.count)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(showTomorrow ? "明日课程" : "今日课程")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                    if lessons.isEmpty {
+                        Text(showTomorrow ? "明日无课" : "今日暂无课程")
+                            .font(.system(size: 11)).lineLimit(1)
+                    } else {
+                        ForEach(Array(lessons.prefix(count))) { lesson in
+                            HStack(spacing: 4) {
+                                Text(lesson.start, style: .time)
+                                    .font(.system(size: 10).monospacedDigit())
+                                    .fixedSize()
+                                Text(lesson.name).font(.system(size: 11, weight: .medium)).lineLimit(1)
+                            }
+                        }
+                        if lessons.count > count {
+                            Text("另有 \(lessons.count - count) 节")
+                                .font(.system(size: 9)).foregroundStyle(.secondary).lineLimit(1)
+                        }
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding(.vertical, 3)
+            .frame(width: geometry.size.width, height: geometry.size.height, alignment: .center)
+            .clipped()
         }
     }
 }
