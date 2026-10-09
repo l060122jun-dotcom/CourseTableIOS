@@ -19,6 +19,14 @@ struct SettingsScreen: View {
     @State private var message: String?
     @State private var shareURL: URL?
     @State private var loaded = false
+    @State private var timeSelection: PeriodTimeSelection?
+    private struct PeriodTimeSelection: Identifiable {
+        let id = UUID()
+        let periodID: UUID
+        let index: Int
+        let isStart: Bool
+        let minute: Int
+    }
     private var shareSelection: Binding<ShareItem?> {
         Binding(
             get: { shareURL.map(ShareItem.init) },
@@ -52,6 +60,17 @@ struct SettingsScreen: View {
         .onAppear(perform: loadFromModel)
         .onChange(of: model.document.activeTableID) { _, _ in loadFromModel() }
         .sheet(item: shareSelection) { ShareSheet(items: [$0.url]) }
+        .sheet(item: $timeSelection) { selection in
+            PeriodTimePickerSheet(index: selection.index, isStart: selection.isStart, minute: selection.minute) { minute in
+                guard let index = periods.firstIndex(where: { $0.id == selection.periodID }) else { return }
+                if selection.isStart { periods[index].startMinuteOfDay = minute }
+                else { periods[index].endMinuteOfDay = minute }
+            }
+            .presentationDetents([.height(350)])
+            .presentationDragIndicator(.visible)
+            .presentationBackground(.ultraThinMaterial)
+            .presentationCornerRadius(30)
+        }
     }
 
     // MARK: Load
@@ -167,9 +186,9 @@ struct SettingsScreen: View {
                 ForEach($periods) { $period in
                     HStack(spacing: 8) {
                         Text("第 \(period.index) 节").font(.system(size: 13, weight: .medium)).frame(width: 58, alignment: .leading)
-                        timeField(period.startText) { period.startMinuteOfDay = Period.minutes(from: $0) ?? period.startMinuteOfDay }
+                        periodTimeButton(period, isStart: true)
                         Text("–").foregroundStyle(.secondary)
-                        timeField(period.endText) { period.endMinuteOfDay = Period.minutes(from: $0) ?? period.endMinuteOfDay }
+                        periodTimeButton(period, isStart: false)
                     }
                 }
                 HStack(spacing: 10) {
@@ -201,6 +220,19 @@ struct SettingsScreen: View {
                 }
             }
         }
+    }
+
+    private func periodTimeButton(_ period: Period, isStart: Bool) -> some View {
+        Button {
+            timeSelection = PeriodTimeSelection(periodID: period.id, index: period.index, isStart: isStart, minute: isStart ? period.startMinuteOfDay : period.endMinuteOfDay)
+        } label: {
+            Text(isStart ? period.startText : period.endText)
+                .font(.system(size: 15, weight: .medium, design: .monospaced))
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 9)
+        }
+        .buttonStyle(.glass)
+        .accessibilityLabel("第\(period.index)节\(isStart ? "开始" : "结束")时间")
     }
 
     private var reminderCard: some View {
@@ -294,6 +326,10 @@ struct SettingsScreen: View {
     }
 
     private func savePeriods() {
+        guard periods.allSatisfy({ $0.endMinuteOfDay > $0.startMinuteOfDay }) else {
+            message = "节次结束时间必须晚于开始时间，请检查后再保存。"
+            return
+        }
         let normalized = periods.enumerated().map { offset, period in
             Period(id: period.id, index: offset + 1, startMinuteOfDay: period.startMinuteOfDay, endMinuteOfDay: period.endMinuteOfDay)
         }
@@ -336,5 +372,43 @@ struct SettingsScreen: View {
         } catch {
             message = "生成失败：\(error.localizedDescription)"
         }
+    }
+}
+
+private struct PeriodTimePickerSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let index: Int
+    let isStart: Bool
+    let onSave: (Int) -> Void
+    @State private var time: Date
+
+    init(index: Int, isStart: Bool, minute: Int, onSave: @escaping (Int) -> Void) {
+        self.index = index
+        self.isStart = isStart
+        self.onSave = onSave
+        let base = Calendar.current.startOfDay(for: .now)
+        _time = State(initialValue: Calendar.current.date(byAdding: .minute, value: minute, to: base) ?? base)
+    }
+
+    var body: some View {
+        VStack(spacing: 12) {
+            HStack {
+                Button("取消") { dismiss() }.buttonStyle(.glass)
+                Spacer()
+                Text("第\(index)节 · \(isStart ? "开始" : "结束")时间").font(.headline)
+                Spacer()
+                Button("确定") {
+                    let parts = Calendar.current.dateComponents([.hour, .minute], from: time)
+                    onSave((parts.hour ?? 0) * 60 + (parts.minute ?? 0))
+                    dismiss()
+                }.buttonStyle(.glassProminent)
+            }
+            DatePicker("时间", selection: $time, displayedComponents: .hourAndMinute)
+                .datePickerStyle(.wheel)
+                .labelsHidden()
+                .environment(\.locale, Locale(identifier: "zh_CN"))
+                .frame(maxWidth: .infinity)
+        }
+        .padding(20)
     }
 }
