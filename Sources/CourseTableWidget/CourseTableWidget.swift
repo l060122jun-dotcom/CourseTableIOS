@@ -31,8 +31,59 @@ struct ScheduleWidgetView: View {
     private var today: [WidgetLesson] {
         entry.schedule?.lessons.filter { Calendar.current.isDate($0.start, inSameDayAs: entry.date) && $0.end > entry.date } ?? []
     }
+    private var tomorrow: [WidgetLesson] {
+        guard let day = Calendar.current.date(byAdding: .day, value: 1, to: entry.date) else { return [] }
+        return entry.schedule?.lessons.filter { Calendar.current.isDate($0.start, inSameDayAs: day) }.sorted { $0.start < $1.start } ?? []
+    }
+    private var showTomorrow: Bool {
+        family != .systemSmall && entry.schedule != nil && today.isEmpty
+    }
     var body: some View {
-        if family == .accessoryRectangular {
+        if showTomorrow {
+            HStack(alignment: .top, spacing: family == .accessoryRectangular ? 6 : 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Image(systemName: "checkmark.circle").foregroundStyle(.secondary)
+                    Text("今日课程已结束")
+                        .font(family == .accessoryRectangular ? .caption2 : .subheadline.weight(.semibold))
+                    if family != .accessoryRectangular {
+                        Text(entry.schedule?.tableName ?? "").font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                Rectangle().fill(Color.secondary.opacity(0.25)).frame(width: 0.5)
+                VStack(alignment: .leading, spacing: family == .accessoryRectangular ? 2 : 6) {
+                    Text("明日课程").font(.caption.weight(.semibold))
+                    if tomorrow.isEmpty {
+                        Text("明日无课").font(.caption).foregroundStyle(.secondary)
+                    } else {
+                        let limit = family == .systemLarge ? 5 : family == .accessoryRectangular ? 2 : 2
+                        ForEach(Array(tomorrow.prefix(limit))) { lesson in
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(lesson.name).font(family == .accessoryRectangular ? .caption2 : .subheadline.weight(.semibold)).lineLimit(1)
+                                HStack(spacing: 2) {
+                                    Text(lesson.start, style: .time)
+                                    if family != .accessoryRectangular {
+                                        Text("–")
+                                        Text(lesson.end, style: .time)
+                                    }
+                                }.font(.caption2).foregroundStyle(.secondary)
+                                if family != .accessoryRectangular {
+                                    Text(lesson.location ?? "未设置教室").font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                                }
+                            }
+                        }
+                        if tomorrow.count > limit {
+                            Text("另有 \(tomorrow.count - limit) 节").font(.caption2).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .containerBackground(for: .widget) {
+                if family != .accessoryRectangular { Color(uiColor: .systemBackground) }
+            }
+        } else if family == .accessoryRectangular {
             VStack(alignment: .leading) {
                 Text(today.first?.name ?? "今日暂无课程").font(.headline)
                 if let lesson = today.first {
