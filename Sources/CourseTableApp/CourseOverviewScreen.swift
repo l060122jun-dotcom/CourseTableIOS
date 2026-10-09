@@ -7,12 +7,29 @@ struct CourseOverviewScreen: View {
     @State private var query = ""
     @State private var selection: DetailSelection?
 
-    private var courses: [StoredCourse] {
+    private struct CourseGroup: Identifiable {
+        let name: String
+        let records: [StoredCourse]
+        var id: String { name }
+        var weeks: Set<Int> {
+            records.flatMap(\.rules).reduce(into: Set<Int>()) { $0.formUnion($1.weekSet) }
+        }
+    }
+
+    private var allGroups: [CourseGroup] {
+        Dictionary(grouping: model.courses) { $0.course.name.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .map { CourseGroup(name: $0.key, records: $0.value) }
+            .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+    }
+
+    private var courses: [CourseGroup] {
         let key = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        return model.courses.filter {
-            key.isEmpty || [$0.course.name, $0.course.teacher ?? "", $0.course.location ?? ""]
-                .contains { $0.localizedCaseInsensitiveContains(key) }
-        }.sorted { $0.course.name.localizedStandardCompare($1.course.name) == .orderedAscending }
+        return allGroups.filter { group in
+            key.isEmpty || group.records.contains { record in
+                [record.course.name, record.course.teacher ?? "", record.course.location ?? ""]
+                    .contains { $0.localizedCaseInsensitiveContains(key) }
+            }
+        }
     }
 
     var body: some View {
@@ -21,7 +38,7 @@ struct CourseOverviewScreen: View {
                 GlassCard {
                     VStack(alignment: .leading, spacing: 10) {
                         Text("课程总览").font(.title2.bold())
-                        Text("\(model.table.name) · \(model.courses.count) 条课程记录")
+                        Text("\(model.table.name) · \(allGroups.count) 门课程")
                             .font(.subheadline).foregroundStyle(.secondary)
                         TextField("搜索课程、教师或教室", text: $query)
                             .textFieldStyle(.roundedBorder)
@@ -32,15 +49,20 @@ struct CourseOverviewScreen: View {
                 if courses.isEmpty {
                     ContentUnavailableView(query.isEmpty ? "暂无课程" : "未找到课程", systemImage: "books.vertical")
                 }
-                ForEach(courses) { stored in
+                ForEach(courses) { group in
+                    GlassCard {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text(group.name).font(.headline)
+                            Text("开课：\(Self.weekText(group.weeks)) · 共 \(group.weeks.count) 周")
+                                .font(.subheadline.weight(.medium))
+                            ForEach(group.records) { stored in
                     Button { selection = DetailSelection(id: stored.course.id) } label: {
-                        GlassCard {
                             VStack(alignment: .leading, spacing: 10) {
                                 HStack(alignment: .top) {
                                     RoundedRectangle(cornerRadius: 3)
                                         .fill(GlassPalette.color(fromHex: stored.course.colorHex))
                                         .frame(width: 5, height: 25)
-                                    Text(stored.course.name).font(.headline)
+                                    Text("上课安排").font(.subheadline.weight(.semibold))
                                     Spacer()
                                     Image(systemName: "chevron.right").font(.caption).foregroundStyle(.secondary)
                                 }
@@ -71,9 +93,12 @@ struct CourseOverviewScreen: View {
                                 }
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
-                        }
                     }
                     .buttonStyle(.plain)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
                 }
             }
             .padding(16)
